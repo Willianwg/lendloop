@@ -59,6 +59,7 @@ say "Pushing Convex functions"
 npx convex dev --once
 
 # 6. n8n --------------------------------------------------------------------------
-# N8N_IMPORT_PLACEHOLDER: Task 8 calls scripts/n8n-import.sh here.
+say "Importing n8n credentials and workflows"
+scripts/n8n-import.sh
 
 say "Done. Next: npm run dev → http://localhost:3000"
