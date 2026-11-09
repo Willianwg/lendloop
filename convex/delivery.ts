@@ -19,7 +19,7 @@ export type LoanEventPayload = {
   recipient: { email: string; name: string };
   tool: { name: string };
   loan: { id: string; startDate: string; endDate: string; status: LoanStatus };
-  actor: { name: string };
+  actor: { name: string } | null; // null = the system acted (auto-decline, listing removed)
 };
 
 /** Builds the payload from current data, or null when there is nothing (left) to send. */
@@ -40,8 +40,9 @@ export const buildPayload = internalQuery({
       recipient: { email: recipient.email, name: recipient.name },
       tool: { name: tool.name },
       loan: { id: loan._id, startDate: loan.startDate, endDate: loan.endDate, status: loan.status },
-      // System events (auto-decline, cancellation on tool removal) have no human actor.
-      actor: { name: actor?.name ?? "LendLoop" },
+      // System events (auto-decline, cancellation on tool removal) have no human actor. An
+      // explicit null, not a sentinel name, so no user can name themselves into "the system".
+      actor: actor ? { name: actor.name } : null,
     };
   },
 });
@@ -136,5 +137,35 @@ export const recordAttempt = internalMutation({
       at: now,
     });
     log("failed", { attempt: attempts, error: lastError });
+  },
+});
+
+/** A pending delivery whose attempt was due longer ago than this is considered stuck. */
+export const STUCK_AFTER_MS = 5 * 60_000;
+
+/**
+ * Safety net for the outbox, run by convex/crons.ts. A scheduled send runs at most once: if
+ * the backend restarts mid-send, or `send` dies before `recordAttempt`, nothing would ever
+ * retry that row. This re-schedules every `pending` delivery whose attempt is overdue.
+ * A duplicate send is harmless: n8n's claim lease de-duplicates by eventId.
+ */
+export const sweepStuck = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const pending = await ctx.db
+      .query("webhookDeliveries")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .take(200);
+    let rescheduled = 0;
+    for (const delivery of pending) {
+      const due = delivery.nextAttemptAt ?? delivery.createdAt;
+      if (now - due < STUCK_AFTER_MS) continue;
+      await ctx.db.patch(delivery._id, { nextAttemptAt: now });
+      await ctx.scheduler.runAfter(0, internal.delivery.send, { deliveryId: delivery._id });
+      rescheduled++;
+    }
+    if (rescheduled > 0) console.log(JSON.stringify({ event: "delivery.sweep", rescheduled }));
+    return { rescheduled };
   },
 });

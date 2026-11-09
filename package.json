@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run",
+    "test": "vitest run && ./scripts/check-no-secrets.sh",
     "typecheck": "next typegen && tsc --noEmit",
     "smoke": "tsx scripts/e2e-smoke.ts"
   },

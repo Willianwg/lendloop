@@ -172,8 +172,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1440,
-        200
+        1680,
+        120
       ],
       "parameters": {
         "respondWith": "json",
@@ -193,7 +193,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Everything a user typed (names, tool names) goes through escapeHtml before it reaches\n// the HTML, so a tool called \"<b>Drill</b> & Saw\" shows up literally (Review Focus 3).\nconst escapeHtml = (s) =>\n  String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]);\n\n// \"2026-11-12\" -> \"Thu, 12 Nov 2026\". Loan dates are UTC calendar dates.\nconst formatDate = (d) =>\n  new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });\n\n// One plain layout for every LendLoop email. All arguments are plain text; this escapes them.\nfunction layout({ greetingName, line, detail, link, cta }) {\n  return [\n    '<div style=\"font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;color:#18181b;line-height:1.5\">',\n    `<p>Hi ${escapeHtml(greetingName)},</p>`,\n    `<p>${escapeHtml(line)}</p>`,\n    `<p style=\"padding:12px 16px;background:#f4f4f5;border-radius:8px\">${detail.map(escapeHtml).join('<br>')}</p>`,\n    `<p><a href=\"${escapeHtml(link)}\" style=\"display:inline-block;padding:10px 16px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none\">${escapeHtml(cta)}</a></p>`,\n    '<p style=\"color:#71717a;font-size:12px\">You get this email because you use LendLoop.</p>',\n    '</div>',\n  ].join('\\n');\n}\n\n// Builds the email for one loan event (payload: spec §8.1). The recipient comes from the\n// payload; Convex already picked lender or borrower.\nconst e = $('Verify signature').first().json.event;\nconst tool = e.tool.name;\nconst actor = e.actor?.name;\n// Convex names the system \"LendLoop\" when nobody acted (auto-decline, listing removed).\nconst bySystem = !actor || actor === 'LendLoop';\n\n// One entry per event type: subject, the sentence that says what happened, the button label.\nconst templates = {\n  'loan.requested': {\n    subject: `New request to borrow your ${tool}`,\n    line: `${actor} would like to borrow your ${tool}.`,\n    cta: 'Review the request',\n  },\n  'loan.approved': {\n    subject: `Approved: you can borrow ${tool}`,\n    line: `${actor} approved your request to borrow ${tool}. The loan page shows their email so you can arrange pickup.`,\n    cta: 'Open the loan',\n  },\n  'loan.declined': {\n    subject: `Request declined: ${tool}`,\n    line: bySystem\n      ? `Your request to borrow ${tool} was declined because another request for those dates was approved.`\n      : `${actor} declined your request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.cancelled': {\n    subject: `Request cancelled: ${tool}`,\n    line: bySystem\n      ? `The request to borrow ${tool} was cancelled because the listing is no longer available.`\n      : `${actor} cancelled the request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.return_claimed': {\n    subject: `Please confirm the return of your ${tool}`,\n    line: `${actor} says they returned your ${tool}. Please confirm the return, or dispute it if you have not got it back.`,\n    cta: 'Confirm or dispute',\n  },\n  'loan.returned': {\n    subject: `Return confirmed: ${tool}`,\n    line: `${actor} confirmed that ${tool} is back. Thanks for returning it!`,\n    cta: 'Open the loan',\n  },\n  'loan.return_disputed': {\n    subject: `Return disputed: ${tool}`,\n    line: `${actor} says ${tool} has not come back yet, so the loan is still open. Please get in touch with them.`,\n    cta: 'Open the loan',\n  },\n};\n\nconst t = templates[e.type];\nif (!t) throw new Error(`Unknown event type: ${e.type}`);\n\nconst link = `${$env.LENDLOOP_APP_URL}/loans/${encodeURIComponent(e.loan.id)}`;\nconst dates = `${formatDate(e.loan.startDate)} – ${formatDate(e.loan.endDate)}`;\n\nreturn [{\n  json: {\n    to: e.recipient.email,\n    subject: t.subject,\n    html: layout({ greetingName: e.recipient.name, line: t.line, detail: [tool, dates], link, cta: t.cta }),\n    text: `Hi ${e.recipient.name},\\n\\n${t.line}\\n\\n${tool}\\n${dates}\\n\\n${t.cta}: ${link}\\n`,\n  },\n}];\n"
+        "jsCode": "// Everything a user typed (names, tool names) goes through escapeHtml before it reaches\n// the HTML, so a tool called \"<b>Drill</b> & Saw\" shows up literally (Review Focus 3).\nconst escapeHtml = (s) =>\n  String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]);\n\n// \"2026-11-12\" -> \"Thu, 12 Nov 2026\". Loan dates are UTC calendar dates.\nconst formatDate = (d) =>\n  new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });\n\n// One plain layout for every LendLoop email. All arguments are plain text; this escapes them.\nfunction layout({ greetingName, line, detail, link, cta }) {\n  return [\n    '<div style=\"font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;color:#18181b;line-height:1.5\">',\n    `<p>Hi ${escapeHtml(greetingName)},</p>`,\n    `<p>${escapeHtml(line)}</p>`,\n    `<p style=\"padding:12px 16px;background:#f4f4f5;border-radius:8px\">${detail.map(escapeHtml).join('<br>')}</p>`,\n    `<p><a href=\"${escapeHtml(link)}\" style=\"display:inline-block;padding:10px 16px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none\">${escapeHtml(cta)}</a></p>`,\n    '<p style=\"color:#71717a;font-size:12px\">You get this email because you use LendLoop.</p>',\n    '</div>',\n  ].join('\\n');\n}\n\n// Builds the email for one loan event (payload: spec §8.1). The recipient comes from the\n// payload; Convex already picked lender or borrower.\nconst e = $('Verify signature').first().json.event;\nconst tool = e.tool.name;\nconst actor = e.actor?.name;\n// Convex names the system \"LendLoop\" when nobody acted (auto-decline, listing removed).\nconst bySystem = !actor; // Convex sends actor: null when the system acted\n\n// One entry per event type: subject, the sentence that says what happened, the button label.\nconst templates = {\n  'loan.requested': {\n    subject: `New request to borrow your ${tool}`,\n    line: `${actor} would like to borrow your ${tool}.`,\n    cta: 'Review the request',\n  },\n  'loan.approved': {\n    subject: `Approved: you can borrow ${tool}`,\n    line: `${actor} approved your request to borrow ${tool}. The loan page shows their email so you can arrange pickup.`,\n    cta: 'Open the loan',\n  },\n  'loan.declined': {\n    subject: `Request declined: ${tool}`,\n    line: bySystem\n      ? `Your request to borrow ${tool} was declined because another request for those dates was approved.`\n      : `${actor} declined your request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.cancelled': {\n    subject: `Request cancelled: ${tool}`,\n    line: bySystem\n      ? `The request to borrow ${tool} was cancelled because the listing is no longer available.`\n      : `${actor} cancelled the request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.return_claimed': {\n    subject: `Please confirm the return of your ${tool}`,\n    line: `${actor} says they returned your ${tool}. Please confirm the return, or dispute it if you have not got it back.`,\n    cta: 'Confirm or dispute',\n  },\n  'loan.returned': {\n    subject: `Return confirmed: ${tool}`,\n    line: `${actor} confirmed that ${tool} is back. Thanks for returning it!`,\n    cta: 'Open the loan',\n  },\n  'loan.return_disputed': {\n    subject: `Return disputed: ${tool}`,\n    line: `${actor} says ${tool} has not come back yet, so the loan is still open. Please get in touch with them.`,\n    cta: 'Open the loan',\n  },\n};\n\nconst t = templates[e.type];\nif (!t) throw new Error(`Unknown event type: ${e.type}`);\n\nconst link = `${$env.LENDLOOP_APP_URL}/loans/${encodeURIComponent(e.loan.id)}`;\nconst dates = `${formatDate(e.loan.startDate)} – ${formatDate(e.loan.endDate)}`;\n\nreturn [{\n  json: {\n    to: e.recipient.email,\n    subject: t.subject,\n    html: layout({ greetingName: e.recipient.name, line: t.line, detail: [tool, dates], link, cta: t.cta }),\n    text: `Hi ${e.recipient.name},\\n\\n${t.line}\\n\\n${tool}\\n${dates}\\n\\n${t.cta}: ${link}\\n`,\n  },\n}];\n"
       }
     },
     {
@@ -387,6 +387,58 @@
       "parameters": {
         "errorMessage": "=Email could not be sent: {{ $('Mark failed').first().json.error }}"
       }
+    },
+    {
+      "id": "a82175f7-bbbf-4d98-a5d2-ff45e1b244a9",
+      "name": "Already sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a2a786a6-d6bd-4dee-b5d5-0ff0017e8f32",
+              "leftValue": "={{ $json.reason }}",
+              "rightValue": "done",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "The claim said no. \"done\": the email already went out, so answer 200 and Convex marks the delivery sent. Otherwise another run holds the lease: answer 409 so the Convex outbox keeps retrying until the outcome is known.",
+      "notesInFlow": true
+    },
+    {
+      "id": "caf5996e-4c69-4c87-8303-e0913c0eef76",
+      "name": "Respond in progress",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        280
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"inProgress\":true}",
+        "options": {
+          "responseCode": 409
+        }
+      }
     }
   ],
   "connections": {
@@ -463,7 +515,7 @@
         ],
         [
           {
-            "node": "Respond duplicate",
+            "node": "Already sent?",
             "type": "main",
             "index": 0
           }
@@ -555,6 +607,24 @@
         [
           {
             "node": "Fail: email not sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already sent?": {
+      "main": [
+        [
+          {
+            "node": "Respond duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond in progress",
             "type": "main",
             "index": 0
           }

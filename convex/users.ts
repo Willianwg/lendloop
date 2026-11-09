@@ -4,6 +4,30 @@ import { writeAudit } from "./lib/audit";
 import { getViewer, requireAdmin } from "./lib/auth";
 import { fail } from "./lib/errors";
 
+const NAME_MAX = 80;
+
+/** A stable, neutral handle such as "Neighbor 4K7Q", derived from the Clerk user id. */
+function neutralHandle(subject: string): string {
+  let hash = 2166136261; // FNV-1a
+  for (const char of subject) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  return `Neighbor ${hash.toString(36).toUpperCase().padStart(4, "0").slice(-4)}`;
+}
+
+/**
+ * The name other neighbours see. Never derived from the email (an address like
+ * jane.doe.oncology@… would leak through every tool card and email). Control and invisible
+ * formatting characters become spaces, the length is capped, and names posing as the app
+ * itself fall back to the neutral handle.
+ */
+export function displayName(claim: string | undefined, subject: string): string {
+  const cleaned = [...(claim ?? "").replace(/(?!\u200D)[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim()]
+    .slice(0, NAME_MAX)
+    .join("")
+    .trim();
+  if (!cleaned || /lendloop/i.test(cleaned)) return neutralHandle(subject);
+  return cleaned;
+}
+
 /**
  * Upserts the signed-in user from the verified Clerk token. Called by the app after sign-in.
  * Requires the `email` and `name` claims added in Clerk → Sessions → Customize session token.
@@ -17,7 +41,7 @@ export const ensureCurrent = mutation({
     if (!email) {
       fail("INVALID", "Clerk session token is missing the email claim. See README → Clerk setup.");
     }
-    const name = identity.name?.trim() || email.split("@")[0];
+    const name = displayName(identity.name, identity.subject);
     const now = Date.now();
 
     const existing = await ctx.db

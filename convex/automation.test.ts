@@ -103,20 +103,42 @@ describe("signed automation endpoints", () => {
     const claim = () => signedFetch(t, "POST", "/automation/notifications/claim", { eventId });
 
     expect(await claim()).toEqual({ status: 200, json: { proceed: true } });
-    expect(await claim()).toEqual({ status: 200, json: { proceed: false } }); // a concurrent duplicate
+    // A concurrent duplicate: another run holds the lease and the outcome isn't known yet.
+    expect(await claim()).toEqual({ status: 200, json: { proceed: false, reason: "in_progress" } });
     vi.setSystemTime(NOW + 4 * 60_000 + 59_000);
-    expect((await claim()).json).toEqual({ proceed: false });
+    expect((await claim()).json).toEqual({ proceed: false, reason: "in_progress" });
     vi.setSystemTime(NOW + 5 * 60_000 + 1000); // the lease of the crashed first run expired
     expect((await claim()).json).toEqual({ proceed: true });
 
     await signedFetch(t, "POST", "/automation/notifications/result", { eventId, status: "sent", executionId: "41" });
     vi.setSystemTime(NOW + 60 * 60_000);
-    expect((await claim()).json).toEqual({ proceed: false }); // already notified, forever
+    expect((await claim()).json).toEqual({ proceed: false, reason: "done" }); // already notified, forever
 
     expect(await signedFetch(t, "POST", "/automation/notifications/claim", { eventId: "unknown" })).toEqual({
       status: 404,
       json: { error: "not_found" },
     });
+  });
+
+  test("a failed result releases the lease, so the outbox retry sends the email again", async () => {
+    const { t, joao, drill } = await world();
+    const loanId = await insertLoan(t, { toolId: drill, borrowerId: joao, startDate: "2026-11-10", endDate: "2026-11-12", status: "approved" });
+    const eventId = await eventFor(t, loanId, joao);
+    const claim = () => signedFetch(t, "POST", "/automation/notifications/claim", { eventId });
+    const result = (status: "sent" | "failed", executionId: string) =>
+      signedFetch(t, "POST", "/automation/notifications/result", { eventId, status, executionId });
+
+    expect((await claim()).json).toEqual({ proceed: true });
+    await result("failed", "1"); // SMTP was down
+    vi.setSystemTime(NOW + 30_000); // Convex retries 30 s later
+    expect((await claim()).json).toEqual({ proceed: true });
+    await result("failed", "2"); // still down: the lease is released again
+    vi.setSystemTime(NOW + 150_000);
+    expect((await claim()).json).toEqual({ proceed: true });
+    await result("sent", "3");
+    expect((await claim()).json).toEqual({ proceed: false, reason: "done" });
+    // One failure entry (the first) and one success entry.
+    expect((await automationEvents(t)).map((e) => e.kind).sort()).toEqual(["notification_failed", "notification_sent"]);
   });
 
   test("result is idempotent", async () => {

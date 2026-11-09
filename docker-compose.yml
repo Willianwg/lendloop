@@ -44,8 +44,12 @@ services:
       - ./n8n/workflows:/workflows:ro
     # n8n receives only what its workflows need: its own encryption key, the two
     # HMAC secrets and the internal URLs. Never the Convex admin key or the Clerk secret.
+    # The encryption key (which decrypts every stored n8n credential) comes from a file, not
+    # the environment, so Code nodes can't read it through $env.
+    secrets:
+      - n8n_encryption_key
     environment:
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?run scripts/setup.sh to create .env}
+      - N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n_encryption_key
       - CONVEX_TO_N8N_SECRET=${CONVEX_TO_N8N_SECRET:?run scripts/setup.sh to create .env}
       - N8N_TO_CONVEX_SECRET=${N8N_TO_CONVEX_SECRET:?run scripts/setup.sh to create .env}
       - LENDLOOP_CONVEX_SITE_URL=http://convex-backend:3211
@@ -73,6 +77,10 @@ services:
     ports:
       - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
       - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+
+secrets:
+  n8n_encryption_key:
+    file: ./.secrets/n8n_encryption_key # created by scripts/setup.sh, git-ignored
 
 volumes:
   convex-data:

@@ -50,7 +50,7 @@ export function LoanCard({ row, as, today, className }: LoanCardProps) {
             {as === "borrower" && row.lender.trustedLender ? <TrustedBadge /> : null}
           </p>
         </div>
-        <StatusBadge status={row.status} overdueDays={badgeOverdueDays(row, today)} className="mt-0.5" />
+        <StatusBadge status={row.status} overdueDays={badgeOverdueDays(row, today)} expired={row.expired} className="mt-0.5" />
       </div>
 
       <p className="text-sm">

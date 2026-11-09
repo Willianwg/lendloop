@@ -4,6 +4,7 @@ import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/s
 import { writeAudit } from "./lib/audit";
 import { requireAdmin, requireUser } from "./lib/auth";
 import {
+  MAX_ACTIVE_LISTINGS,
   REMOVAL_REASON_MAX,
   REMOVAL_REASON_MIN,
   TOOL_DESCRIPTION_MAX,
@@ -24,14 +25,13 @@ import { cleanText } from "./lib/validate";
 export const listPublic = query({
   args: {},
   handler: async (ctx) => {
+    // Reads at most 100 rows however many tools exist (newest first by creation time).
     const tools = await ctx.db
       .query("tools")
-      .withIndex("by_status_category", (q) => q.eq("status", "active"))
-      .collect();
-    return tools
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 100)
-      .map((tool) => ({ _id: tool._id, name: tool.name, category: tool.category }));
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .order("desc")
+      .take(100);
+    return tools.map((tool) => ({ _id: tool._id, name: tool.name, category: tool.category }));
   },
 });
 
@@ -123,7 +123,7 @@ const toolFields = {
 function cleanToolFields(a: { name: string; description: string }) {
   return {
     name: cleanText(a.name, "name", 1, TOOL_NAME_MAX),
-    description: cleanText(a.description, "description", 1, TOOL_DESCRIPTION_MAX),
+    description: cleanText(a.description, "description", 1, TOOL_DESCRIPTION_MAX, true),
   };
 }
 
@@ -131,6 +131,13 @@ export const create = mutation({
   args: toolFields,
   handler: async (ctx, args) => {
     const viewer = await requireUser(ctx);
+    const mine = await ctx.db
+      .query("tools")
+      .withIndex("by_owner", (q) => q.eq("ownerId", viewer._id))
+      .collect();
+    if (mine.filter((tool) => tool.status === "active").length >= MAX_ACTIVE_LISTINGS) {
+      fail("CONFLICT", `You can have at most ${MAX_ACTIVE_LISTINGS} active listings.`);
+    }
     const now = Date.now();
     return ctx.db.insert("tools", {
       ownerId: viewer._id,
@@ -177,7 +184,7 @@ export const remove = mutation({
     const viewer = await requireUser(ctx);
     await requireOwnTool(ctx, toolId, viewer._id);
     if ((await activeLoansOfTool(ctx, toolId)).length > 0) {
-      fail("CONFLICT", "This tool is currently on loan. Delete it after it comes back.");
+      fail("CONFLICT", "This tool has an approved loan. Delete it after it comes back, or cancel the loan first if it hasn't started.");
     }
     const now = Date.now();
     await ctx.db.patch(toolId, { status: "removed", removedAt: now, removedBy: viewer._id, updatedAt: now });

@@ -101,7 +101,9 @@ export function RequestSheet({ tool }: { tool: ToolView }) {
         <div className="px-4">
           {tool.availability.state === "on_loan" ? (
             <p className="mb-3 rounded-lg bg-warning px-3 py-2 text-sm text-warning-foreground">
-              On loan until {formatIsoDate(tool.availability.until)}. Dates after that are the safest bet.
+              {tool.availability.until < new Date().toISOString().slice(0, 10)
+                ? "This tool is out and past its return date. Pick later dates, or ask the owner when it's back."
+                : `On loan until ${formatIsoDate(tool.availability.until)}. Requests for those dates can't be accepted.`}
             </p>
           ) : null}
           <Calendar

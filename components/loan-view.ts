@@ -110,6 +110,16 @@ export const ACTIONS: Record<LoanAction, ActionMeta> = {
       cancel: "Keep request",
     },
   },
+  revoke: {
+    label: "Cancel loan",
+    done: "Loan cancelled",
+    variant: "destructive",
+    confirm: {
+      title: "Cancel this loan?",
+      body: "It hasn't started yet. {name} gets an email saying the loan is off. This can't be undone.",
+      cancel: "Keep loan",
+    },
+  },
   claim_return: { label: "I returned it", done: "Return reported to the lender", variant: "default" },
   confirm_return: { label: "Confirm return", done: "Return confirmed", variant: "default" },
   dispute_return: {
@@ -122,7 +132,17 @@ export const ACTIONS: Record<LoanAction, ActionMeta> = {
       cancel: "Go back",
     },
   },
-  mark_returned: { label: "Mark as returned", done: "Loan closed as returned", variant: "outline" },
+  mark_returned: {
+    label: "Mark as returned",
+    done: "Loan closed as returned",
+    variant: "outline",
+    // Irreversible: it closes the loan, stops reminders and emails the borrower.
+    confirm: {
+      title: "Is the tool back with you?",
+      body: "This closes the loan and tells {name} the return is confirmed. It can't be undone.",
+      cancel: "Not yet",
+    },
+  },
 };
 
 /** Order buttons by weight: the main action first, then the quieter ones. */
@@ -133,6 +153,7 @@ export const ACTION_ORDER: readonly LoanAction[] = [
   "mark_returned",
   "dispute_return",
   "decline",
+  "revoke",
   "cancel",
 ];
 

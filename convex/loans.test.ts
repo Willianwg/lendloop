@@ -113,7 +113,7 @@ describe("loans.transition", () => {
     expect(await deliveries(t)).toHaveLength(0);
 
     // A wrong state from the right actor is CONFLICT.
-    expect((await errorOf(as("joao").mutation(api.loans.transition, { loanId: approved, action: "cancel" }))).code).toBe("CONFLICT");
+    expect((await errorOf(as("joao").mutation(api.loans.transition, { loanId: pending, action: "claim_return" }))).code).toBe("CONFLICT");
     expect((await errorOf(t.mutation(api.loans.transition, { loanId: pending, action: "cancel" }))).code).toBe("UNAUTHENTICATED");
   });
 
@@ -254,7 +254,7 @@ describe("loan queries", () => {
       borrower: { name: "Joao" },
       lender: { name: "Ana", trustedLender: true },
       overdue: false,
-      allowedActions: ["claim_return"],
+      allowedActions: ["cancel", "claim_return"], // not picked up yet, so it can still be called off
       lastActivity: { kind: "notification_sent", at: NOW + 61_000 },
       activity: [{ kind: "notification_sent", detail: "Borrower notified", at: NOW + 61_000 }],
     });
@@ -278,9 +278,9 @@ describe("loan queries", () => {
     expect((await as("ana").query(api.loans.incoming, {})).map((r) => r._id)).toEqual([m1, j1]); // newest first
     expect((await as("ana").query(api.loans.myRequests, {})).map((r) => r._id)).toEqual([a1]);
     const [incomingForMei] = await as("mei").query(api.loans.incoming, {});
-    expect(incomingForMei).toMatchObject({ _id: a1, tool: { name: "Tent" }, borrower: { name: "Ana" }, allowedActions: ["mark_returned"] });
+    expect(incomingForMei).toMatchObject({ _id: a1, tool: { name: "Tent" }, borrower: { name: "Ana" }, allowedActions: ["revoke", "mark_returned"] });
     expect(Object.keys(incomingForMei).sort()).toEqual(
-      ["_id", "allowedActions", "borrower", "endDate", "lastActivity", "lender", "overdue", "startDate", "status", "tool", "viewerRole"].sort(),
+      ["_id", "allowedActions", "borrower", "endDate", "expired", "lastActivity", "lender", "overdue", "startDate", "status", "tool", "viewerRole"].sort(),
     );
     expect((await errorOf(t.query(api.loans.incoming, {}))).code).toBe("UNAUTHENTICATED");
   });
@@ -353,5 +353,98 @@ describe("viewerRole on loan rows", () => {
     expect((await as("root").query(api.loans.adminList, {}))[0].viewerRole).toBeNull();
     void ana;
     void root;
+  });
+});
+
+describe("review fixes", () => {
+  test("a stale pending request can't be approved and shows as expired", async () => {
+    const { t, joao, drill, as } = await world();
+    const stale = await loanAt(t, drill, joao, "pending", "2026-11-01", "2026-11-08");
+    const err = await errorOf(as("ana").mutation(api.loans.transition, { loanId: stale, action: "approve" }));
+    expect(err).toEqual({ code: "CONFLICT", message: "These dates have passed. Decline the request instead." });
+    expect((await loanRow(t, stale))?.status).toBe("pending");
+    const [row] = await as("ana").query(api.loans.incoming, {});
+    expect(row).toMatchObject({ expired: true, allowedActions: ["decline"] });
+  });
+
+  test("the borrower can call off an approved loan before pickup; the lender is told", async () => {
+    const { t, ana, joao, drill, as } = await world();
+    const loan = await loanAt(t, drill, joao, "approved", "2026-11-12", "2026-11-14");
+    await as("joao").mutation(api.loans.transition, { loanId: loan, action: "cancel" });
+    expect((await loanRow(t, loan))?.status).toBe("cancelled");
+    expect((await deliveries(t)).at(-1)).toMatchObject({ type: "loan.cancelled", recipientId: ana });
+    // The tool is free again, so the owner can delete it.
+    await as("ana").mutation(api.tools.remove, { toolId: drill });
+  });
+
+  test("the lender can revoke an approved loan before pickup; the borrower is told", async () => {
+    const { t, joao, drill, as } = await world();
+    const loan = await loanAt(t, drill, joao, "approved", "2026-11-12", "2026-11-14");
+    await as("ana").mutation(api.loans.transition, { loanId: loan, action: "revoke" });
+    expect(await loanRow(t, loan)).toMatchObject({ status: "cancelled" });
+    expect((await loanRow(t, loan))?.decidedAt).toBeGreaterThanOrEqual(NOW);
+    expect((await loanRow(t, loan))?.returnedAt).toBeUndefined();
+    expect((await deliveries(t)).at(-1)).toMatchObject({ type: "loan.cancelled", recipientId: joao });
+  });
+
+  test("an approved loan that already started can't be called off", async () => {
+    const { t, joao, drill, as } = await world();
+    const loan = await loanAt(t, drill, joao, "approved", "2026-11-08", "2026-11-14");
+    const err = await errorOf(as("ana").mutation(api.loans.transition, { loanId: loan, action: "revoke" }));
+    expect(err).toEqual({ code: "CONFLICT", message: "This loan has already started, so it can only be returned now." });
+  });
+
+  test("a request for dates the tool is already lent out is rejected", async () => {
+    const { t, joao, drill, as } = await world();
+    await loanAt(t, drill, joao, "approved", "2026-11-10", "2026-11-14");
+    const err = await errorOf(as("mei").mutation(api.loans.request, { toolId: drill, startDate: "2026-11-13", endDate: "2026-11-15" }));
+    expect(err.code).toBe("CONFLICT");
+    // Adjacent dates are fine.
+    await as("mei").mutation(api.loans.request, { toolId: drill, startDate: "2026-11-15", endDate: "2026-11-16" });
+  });
+
+  test("a borrower can have at most 5 open requests", async () => {
+    const { t, ana, as } = await world();
+    for (let i = 0; i < 6; i++) await insertTool(t, ana, { name: `Tool ${i}` });
+    const tools = await as("joao").query(api.tools.list, {});
+    for (const tool of tools.slice(0, 5)) {
+      await as("joao").mutation(api.loans.request, { toolId: tool._id, startDate: "2026-11-10", endDate: "2026-11-11" });
+    }
+    const err = await errorOf(
+      as("joao").mutation(api.loans.request, { toolId: tools[5]._id, startDate: "2026-11-10", endDate: "2026-11-11" }),
+    );
+    expect(err).toEqual({ code: "CONFLICT", message: "You have 5 open requests. Wait for an answer or cancel one first." });
+  });
+
+  test("the counterpart email is hidden again 14 days after the return", async () => {
+    const { t, joao, drill, as } = await world();
+    const loan = await loanAt(t, drill, joao, "returned", "2026-10-01", "2026-10-03");
+    await t.run((ctx) => ctx.db.patch(loan, { returnedAt: NOW - 13 * 86_400_000 }));
+    expect((await as("joao").query(api.loans.get, { loanId: loan })).counterpartEmail).toBe("ana@example.test");
+    await t.run((ctx) => ctx.db.patch(loan, { returnedAt: NOW - 15 * 86_400_000 }));
+    expect((await as("joao").query(api.loans.get, { loanId: loan })).counterpartEmail).toBeNull();
+  });
+
+  test("anonymous callers are rejected by every loan function", async () => {
+    const { t, joao, drill } = await world();
+    const loan = await loanAt(t, drill, joao, "pending");
+    const calls = [
+      t.mutation(api.loans.request, { toolId: drill, startDate: "2026-11-10", endDate: "2026-11-11" }),
+      t.mutation(api.loans.transition, { loanId: loan, action: "approve" }),
+      t.query(api.loans.myRequests, {}),
+      t.query(api.loans.incoming, {}),
+      t.query(api.loans.get, { loanId: loan }),
+      t.query(api.loans.adminList, {}),
+    ];
+    for (const call of calls) expect((await errorOf(call)).code).toBe("UNAUTHENTICATED");
+  });
+
+  test("a valid token without a users row is UNAUTHENTICATED", async () => {
+    const { t, drill } = await world();
+    const ghost = t.withIdentity(identity("ghost"));
+    expect((await errorOf(ghost.query(api.loans.myRequests, {}))).code).toBe("UNAUTHENTICATED");
+    expect((await errorOf(ghost.mutation(api.loans.request, { toolId: drill, startDate: "2026-11-10", endDate: "2026-11-11" }))).code).toBe(
+      "UNAUTHENTICATED",
+    );
   });
 });

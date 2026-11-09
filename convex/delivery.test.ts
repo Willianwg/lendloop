@@ -84,7 +84,7 @@ describe("outbox delivery", () => {
     expect(Object.keys(p.recipient).sort()).toEqual(["email", "name"]);
     expect(Object.keys(p.tool)).toEqual(["name"]);
     expect(Object.keys(p.loan).sort()).toEqual(["endDate", "id", "startDate", "status"]);
-    expect(Object.keys(p.actor)).toEqual(["name"]);
+    expect(Object.keys(p.actor!)).toEqual(["name"]);
     expect(p).toMatchObject({
       type: "loan.approved",
       occurredAt: expect.stringMatching(/^2026-11-09T12:00:00\.\d{3}Z$/),
@@ -95,12 +95,12 @@ describe("outbox delivery", () => {
     });
   });
 
-  test("system events name LendLoop as the actor", async () => {
+  test("system events carry no actor (actor: null), so no user name can pose as the system", async () => {
     stubFetch([200]);
     const t = setup();
     const { deliveryId } = await seedLoanEvent(t, false);
     const payload = await t.query(internal.delivery.buildPayload, { deliveryId });
-    expect(payload?.actor).toEqual({ name: "LendLoop" });
+    expect(payload?.actor).toBeNull();
   });
 
   test("send signs the request", async () => {
@@ -198,5 +198,44 @@ describe("outbox delivery", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     await t.mutation(internal.delivery.recordAttempt, { deliveryId, ok: false, error: "late duplicate" });
     expect(await deliveryRow(t, deliveryId)).toMatchObject({ status: "sent", attempts: 0 });
+  });
+});
+
+describe("stuck delivery sweeper", () => {
+  test("re-sends a delivery left pending (e.g. the backend restarted mid-send), and only that one", async () => {
+    const t = setup();
+    const { deliveryId, loanId, joao } = await seedLoanEvent(t);
+    const calls = stubFetch([200]);
+    // Simulate a crash: the scheduled send never ran, and 10 minutes have passed.
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query("_scheduled_functions").collect()) await ctx.scheduler.cancel(job._id);
+    });
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    // A delivery waiting for a scheduled retry in the future must be left alone.
+    const waiting = await t.run((ctx) =>
+      ctx.db.insert("webhookDeliveries", {
+        eventId: "waiting",
+        loanId,
+        type: "loan.approved",
+        recipientId: joao,
+        status: "pending",
+        attempts: 1,
+        nextAttemptAt: Date.now() + 60_000,
+        createdAt: Date.now() - 20 * 60_000,
+      }),
+    );
+
+    expect(await t.mutation(internal.delivery.sweepStuck, {})).toEqual({ rescheduled: 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(calls).toHaveLength(1);
+    expect((await deliveryRow(t, deliveryId))?.status).toBe("sent");
+    expect((await deliveryRow(t, waiting))?.status).toBe("pending");
+  });
+
+  test("leaves a fresh pending delivery alone", async () => {
+    const t = setup();
+    await seedLoanEvent(t);
+    expect(await t.mutation(internal.delivery.sweepStuck, {})).toEqual({ rescheduled: 0 });
   });
 });

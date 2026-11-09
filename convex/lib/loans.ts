@@ -5,6 +5,12 @@
 //      │                    │  ▲                        │
 //      ├─decline─▶ declined │  └────dispute_return──────┘
 //      └─cancel──▶ cancelled└──────────mark_returned (also from return_claimed)──────▶ returned
+//                    ▲      │
+//                    └──────┘ cancel (borrower) / revoke (lender), only before the start date
+//
+// Date rules on top of the diagram (`dateAllows`): a request whose end date has passed can't be
+// approved (it would be overdue the moment it is approved), and an approved loan can only be
+// called off before pickup.
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
@@ -14,6 +20,7 @@ export const LOAN_ACTIONS = [
   "approve",
   "decline",
   "cancel",
+  "revoke",
   "claim_return",
   "confirm_return",
   "dispute_return",
@@ -24,6 +31,7 @@ export const vLoanAction = v.union(
   v.literal("approve"),
   v.literal("decline"),
   v.literal("cancel"),
+  v.literal("revoke"),
   v.literal("claim_return"),
   v.literal("confirm_return"),
   v.literal("dispute_return"),
@@ -36,7 +44,10 @@ export type Transition = { from: LoanStatus[]; to: LoanStatus; actor: Party; eve
 export const TRANSITIONS: Record<LoanAction, Transition> = {
   approve: { from: ["pending"], to: "approved", actor: "lender", event: "loan.approved", notify: "borrower" },
   decline: { from: ["pending"], to: "declined", actor: "lender", event: "loan.declined", notify: "borrower" },
-  cancel: { from: ["pending"], to: "cancelled", actor: "borrower", event: "loan.cancelled", notify: "lender" },
+  // Withdraw a request, or call off an approved loan before pickup (see dateAllows).
+  cancel: { from: ["pending", "approved"], to: "cancelled", actor: "borrower", event: "loan.cancelled", notify: "lender" },
+  // The lender calls off an approved loan before pickup.
+  revoke: { from: ["approved"], to: "cancelled", actor: "lender", event: "loan.cancelled", notify: "borrower" },
   claim_return: {
     from: ["approved"],
     to: "return_claimed",
@@ -66,7 +77,14 @@ export const TRANSITIONS: Record<LoanAction, Transition> = {
 /** A loan in one of these states means the borrower has (or should have) the tool. */
 export const ACTIVE_STATUSES = ["approved", "return_claimed"] as const satisfies readonly LoanStatus[];
 
-type LoanParties = Pick<Doc<"loans">, "status" | "lenderId" | "borrowerId">;
+type LoanParties = Pick<Doc<"loans">, "status" | "lenderId" | "borrowerId" | "startDate" | "endDate">;
+
+/** Date rules that the status diagram alone can't express. `today` is a UTC "YYYY-MM-DD". */
+function dateAllows(loan: LoanParties, action: LoanAction, today: string): boolean {
+  if (action === "approve") return loan.endDate >= today;
+  if (action === "revoke" || (action === "cancel" && loan.status === "approved")) return loan.startDate > today;
+  return true;
+}
 
 function partyOf(loan: LoanParties, viewerId: Id<"users">): Party | null {
   if (viewerId === loan.lenderId) return "lender";
@@ -82,21 +100,28 @@ export function checkTransition(
   loan: LoanParties,
   viewerId: Id<"users">,
   action: LoanAction,
+  today: string,
 ): { ok: true; transition: Transition; to: LoanStatus } | { ok: false; code: "FORBIDDEN" | "CONFLICT" } {
   const transition = TRANSITIONS[action];
   if (partyOf(loan, viewerId) !== transition.actor) return { ok: false, code: "FORBIDDEN" };
   if (!transition.from.includes(loan.status)) return { ok: false, code: "CONFLICT" };
+  if (!dateAllows(loan, action, today)) return { ok: false, code: "CONFLICT" };
   return { ok: true, transition, to: transition.to };
 }
 
 /** The actions the UI should offer `viewerId` on `loan`. */
-export function allowedActions(loan: LoanParties, viewerId: Id<"users">): LoanAction[] {
-  const actions = LOAN_ACTIONS.filter((action) => checkTransition(loan, viewerId, action).ok);
+export function allowedActions(loan: LoanParties, viewerId: Id<"users">, today: string): LoanAction[] {
+  const actions = LOAN_ACTIONS.filter((action) => checkTransition(loan, viewerId, action, today).ok);
   // After a return claim, confirm_return and mark_returned do the same thing; offer one button.
   return actions.includes("confirm_return") ? actions.filter((a) => a !== "mark_returned") : actions;
 }
 
 /** Overdue = still approved after the end date. A return claim pauses it (no reminders). */
+/** A pending request whose dates have passed: it can only be declined or cancelled now. */
+export function isExpired(loan: Pick<Doc<"loans">, "status" | "endDate">, today: string): boolean {
+  return loan.status === "pending" && loan.endDate < today;
+}
+
 export function isOverdue(loan: Pick<Doc<"loans">, "status" | "endDate">, today: string): boolean {
   return loan.status === "approved" && loan.endDate < today;
 }

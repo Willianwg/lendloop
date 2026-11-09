@@ -15,11 +15,16 @@ export type StatusBadgeProps = {
   status: LoanStatus;
   /** Days past the end date. When > 0 on an approved loan, the badge reads "Overdue N days" in red. */
   overdueDays?: number;
+  /** A pending request whose dates have passed: it reads "Expired". */
+  expired?: boolean;
   className?: string;
 };
 
 /** A loan's status as a small colored pill. */
-export function StatusBadge({ status, overdueDays = 0, className }: StatusBadgeProps) {
+export function StatusBadge({ status, overdueDays = 0, expired = false, className }: StatusBadgeProps) {
+  if (status === "pending" && expired) {
+    return <Badge className={cn("bg-muted text-muted-foreground", className)}>Expired</Badge>;
+  }
   if (status === "approved" && overdueDays > 0) {
     return (
       <Badge variant="destructive" className={className}>

@@ -1,16 +1,17 @@
 "use client";
 
 import { useConvexAuth, useMutation } from "convex/react";
-import { CircleAlert, X } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
 import { errorMessage } from "@/lib/errors";
 
 /**
  * Creates or refreshes the viewer's Convex `users` row from the verified Clerk token, once per
  * page load after Convex has the token. If that fails (for example, the session token lacks the
- * `email` claim), it shows the server's message in a banner instead of failing silently.
+ * `email` claim), it shows the server's message in a banner instead of failing silently. The
+ * banner can't be dismissed: without the account row the pages can't load, and hiding the
+ * reason would leave the user staring at skeletons.
  */
 export function EnsureUser() {
   const { isAuthenticated } = useConvexAuth();
@@ -35,9 +36,6 @@ export function EnsureUser() {
         <p className="font-medium">We couldn&apos;t set up your account.</p>
         <p className="mt-0.5 text-muted-foreground">{error}</p>
       </div>
-      <Button variant="ghost" size="icon-sm" onClick={() => setError(null)} aria-label="Dismiss">
-        <X />
-      </Button>
     </div>
   );
 }

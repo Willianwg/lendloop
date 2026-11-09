@@ -46,6 +46,12 @@ export const AUTOMATION_EVENT_KINDS = [
 export type AutomationEventKind = (typeof AUTOMATION_EVENT_KINDS)[number];
 
 export const MAX_LOAN_DAYS = 30;
+// Per-user caps: keep one account from flooding neighbours with request emails or the board
+// with listings (security review). Generous for a real neighbour.
+export const MAX_OPEN_REQUESTS = 5;
+export const MAX_ACTIVE_LISTINGS = 50;
+/** Days after a return during which the two parties still see each other's email. */
+export const CONTACT_WINDOW_DAYS = 14;
 export const TOOL_NAME_MAX = 80;
 export const TOOL_DESCRIPTION_MAX = 280;
 export const REMOVAL_REASON_MIN = 3;

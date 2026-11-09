@@ -15,6 +15,9 @@ const vResultStatus = v.union(v.literal("sent"), v.literal("failed"));
 /**
  * n8n's de-duplication step: called before sending an email for a loan event. Returns
  * `proceed: true` to exactly one caller at a time, and never after the email went out.
+ * When it says no, `reason` tells n8n whether the email is already out ("done", answer the
+ * retry with 200) or another run holds the lease ("in_progress", answer 409 so the Convex
+ * outbox keeps retrying until the outcome is known).
  */
 export const claimNotification = internalMutation({
   args: { eventId: v.string() },
@@ -25,9 +28,9 @@ export const claimNotification = internalMutation({
       .unique();
     if (!delivery) return { found: false as const };
     const now = Date.now();
-    if (delivery.notifyStatus === "sent") return { found: true as const, proceed: false };
+    if (delivery.notifyStatus === "sent") return { found: true as const, proceed: false, reason: "done" as const };
     if (delivery.claimedAt !== undefined && now - delivery.claimedAt < CLAIM_LEASE_MS) {
-      return { found: true as const, proceed: false };
+      return { found: true as const, proceed: false, reason: "in_progress" as const };
     }
     await ctx.db.patch(delivery._id, { claimedAt: now });
     return { found: true as const, proceed: true };
@@ -46,6 +49,10 @@ export const recordNotificationResult = internalMutation({
       .withIndex("by_eventId", (q) => q.eq("eventId", eventId))
       .unique();
     if (!delivery) return { found: false as const };
+    // A failed send gives up its lease, so the Convex outbox retry can claim it and try again.
+    if (status === "failed" && delivery.notifyStatus !== "sent") {
+      await ctx.db.patch(delivery._id, { claimedAt: undefined });
+    }
     if (delivery.notifyStatus === status || delivery.notifyStatus === "sent") {
       return { found: true as const, recorded: false };
     }

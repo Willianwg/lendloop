@@ -26,9 +26,18 @@ env_set() { local file=$1 key=$2 value=$3; touch "$file"; chmod 600 "$file"
 
 # 1. Secrets for docker compose -------------------------------------------------
 say "Ensuring .env secrets"
-for key in N8N_ENCRYPTION_KEY CONVEX_TO_N8N_SECRET N8N_TO_CONVEX_SECRET; do
+for key in CONVEX_TO_N8N_SECRET N8N_TO_CONVEX_SECRET; do
   [ -n "$(env_get .env "$key")" ] || env_set .env "$key" "$(openssl rand -hex 32)"
 done
+# n8n's encryption key lives in a file mounted as a compose secret, not in the environment.
+# An older .env value is moved there so existing n8n credentials stay readable.
+mkdir -p .secrets && chmod 700 .secrets
+if [ ! -s .secrets/n8n_encryption_key ]; then
+  legacy=$(env_get .env N8N_ENCRYPTION_KEY)
+  printf '%s' "${legacy:-$(openssl rand -hex 32)}" > .secrets/n8n_encryption_key
+fi
+# Readable by the container user (the directory itself is 700, so not by other host users).
+chmod 644 .secrets/n8n_encryption_key
 
 CONVEX_PORT=$(env_get .env CONVEX_PORT); CONVEX_PORT=${CONVEX_PORT:-3210}
 

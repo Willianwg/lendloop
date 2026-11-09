@@ -26,11 +26,27 @@ describe("users", () => {
     expect(rows[0]).toMatchObject({ name: "Ana Souza", email: "ana@example.test", role: "user", trustedLender: false });
   });
 
-  test("ensureCurrent falls back to the email local part for the name", async () => {
+  test("without a name claim the display name is a neutral handle, never derived from the email", async () => {
     const t = setup();
-    await t.withIdentity(identity("bia", { name: undefined })).mutation(api.users.ensureCurrent, {});
+    await t
+      .withIdentity(identity("jane.doe.oncology", { name: undefined }))
+      .mutation(api.users.ensureCurrent, {});
     const [row] = await t.run((ctx) => ctx.db.query("users").collect());
-    expect(row.name).toBe("bia");
+    expect(row.name).toMatch(/^Neighbor [A-Z0-9]{4}$/);
+    expect(row.name.toLowerCase()).not.toContain("jane");
+  });
+
+  test("names are cleaned: control characters, length, and names posing as LendLoop", async () => {
+    const t = setup();
+    const nameFor = async (key: string, name: string) => {
+      await t.withIdentity(identity(key, { name })).mutation(api.users.ensureCurrent, {});
+      const row = await t.run((ctx) => ctx.db.query("users").withIndex("by_clerkId", (q) => q.eq("clerkId", `user_${key}`)).unique());
+      return row!.name;
+    };
+    expect(await nameFor("a", "Ana\r\nSouza\u202E")).toBe("Ana Souza");
+    expect([...(await nameFor("b", "x".repeat(500)))].length).toBe(80);
+    expect(await nameFor("c", "LendLoop Support")).toMatch(/^Neighbor [A-Z0-9]{4}$/);
+    expect(await nameFor("d", "   ")).toMatch(/^Neighbor [A-Z0-9]{4}$/);
   });
 
   test("ensureCurrent rejects a token without email", async () => {

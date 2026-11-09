@@ -237,3 +237,54 @@ describe("availability of overdue loans", () => {
     expect(card.availability).toEqual({ state: "available" });
   });
 });
+
+describe("review fixes: tools", () => {
+  test("anonymous callers are rejected by every non-public tool function", async () => {
+    const t = setup();
+    const ana = await insertUser(t, "ana");
+    const drill = await insertTool(t, ana, { name: "Drill" });
+    const fields = { name: "x", category: "garden" as const, condition: "good" as const, description: "y" };
+    const calls = [
+      t.query(api.tools.list, {}),
+      t.query(api.tools.get, { toolId: drill }),
+      t.query(api.tools.mine, {}),
+      t.mutation(api.tools.create, fields),
+      t.mutation(api.tools.update, { toolId: drill, ...fields }),
+      t.mutation(api.tools.remove, { toolId: drill }),
+      t.mutation(api.tools.adminRemove, { toolId: drill, reason: "spam" }),
+      t.mutation(api.users.setTrustedLender, { userId: ana, trusted: true }),
+      t.query(api.users.adminList, {}),
+    ];
+    for (const call of calls) expect((await errorOf(call)).code).toBe("UNAUTHENTICATED");
+  });
+
+  test("a user can have at most 50 active listings", async () => {
+    const t = setup();
+    const ana = await insertUser(t, "ana");
+    for (let i = 0; i < 50; i++) await insertTool(t, ana, { name: `Tool ${i}` });
+    const err = await errorOf(
+      t.withIdentity(identity("ana")).mutation(api.tools.create, { name: "One more", category: "garden", condition: "good", description: "x" }),
+    );
+    expect(err).toEqual({ code: "CONFLICT", message: "You can have at most 50 active listings." });
+  });
+
+  test("tool text rejects control and invisible formatting characters", async () => {
+    const t = setup();
+    await insertUser(t, "ana");
+    const create = (name: string, description = "Fine") =>
+      t.withIdentity(identity("ana")).mutation(api.tools.create, { name, category: "garden", condition: "good", description });
+    expect((await errorOf(create("Drill\r\nBcc: x@evil.example"))).code).toBe("INVALID");
+    expect((await errorOf(create("Drill‮evil"))).code).toBe("INVALID");
+    // Descriptions may contain line breaks.
+    await create("Drill", "Line one\nLine two");
+  });
+});
+
+test("listPublic returns the newest 100 active tools", async () => {
+  const t = setup();
+  const ana = await insertUser(t, "ana");
+  for (let i = 0; i < 105; i++) await insertTool(t, ana, { name: `Tool ${i}` });
+  const rows = await t.query(api.tools.listPublic, {});
+  expect(rows).toHaveLength(100);
+  expect(rows[0].name).toBe("Tool 104");
+});

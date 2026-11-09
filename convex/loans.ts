@@ -2,10 +2,10 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import { requireAdmin, requireUser } from "./lib/auth";
-import { MAX_LOAN_DAYS, vLoanStatus, type EventType } from "./lib/constants";
+import { CONTACT_WINDOW_DAYS, MAX_LOAN_DAYS, MAX_OPEN_REQUESTS, vLoanStatus, type EventType } from "./lib/constants";
 import { addDays, daysInclusive, isIsoDate, rangesOverlap, todayUtc } from "./lib/dates";
 import { fail } from "./lib/errors";
-import { ACTIVE_STATUSES, activeLoansOfTool, allowedActions, checkTransition, isOverdue, vLoanAction } from "./lib/loans";
+import { ACTIVE_STATUSES, activeLoansOfTool, allowedActions, checkTransition, isExpired, isOverdue, vLoanAction } from "./lib/loans";
 import { enqueueLoanEvent } from "./lib/outbox";
 
 /**
@@ -26,6 +26,20 @@ export const request = mutation({
     const tool = await ctx.db.get(toolId);
     if (!tool || tool.status !== "active") fail("NOT_FOUND", "This tool is no longer listed.");
     if (tool.ownerId === viewer._id) fail("FORBIDDEN", "You can't borrow your own tool.");
+
+    // Don't accept a request the lender could never approve.
+    const lentOut = await activeLoansOfTool(ctx, toolId);
+    if (lentOut.some((loan) => rangesOverlap(loan.startDate, loan.endDate, startDate, endDate))) {
+      fail("CONFLICT", "The tool is already lent out for some of these dates.");
+    }
+
+    const open = await ctx.db
+      .query("loans")
+      .withIndex("by_borrower", (q) => q.eq("borrowerId", viewer._id))
+      .collect();
+    if (open.filter((loan) => loan.status === "pending").length >= MAX_OPEN_REQUESTS) {
+      fail("CONFLICT", `You have ${MAX_OPEN_REQUESTS} open requests. Wait for an answer or cancel one first.`);
+    }
 
     // Mutations are serializable, so this check also stops a double tap (Review Focus 5).
     const myPending = await ctx.db
@@ -61,9 +75,16 @@ export const transition = mutation({
     const viewer = await requireUser(ctx);
     const loan = await ctx.db.get(loanId);
     if (!loan) fail("NOT_FOUND", "Loan not found.");
-    const check = checkTransition(loan, viewer._id, action);
+    const today = todayUtc();
+    const check = checkTransition(loan, viewer._id, action, today);
     if (!check.ok) {
       if (check.code === "FORBIDDEN") fail("FORBIDDEN", "You can't do that on this loan.");
+      if (action === "approve" && loan.status === "pending" && isExpired(loan, today)) {
+        fail("CONFLICT", "These dates have passed. Decline the request instead.");
+      }
+      if ((action === "cancel" || action === "revoke") && loan.status === "approved") {
+        fail("CONFLICT", "This loan has already started, so it can only be returned now.");
+      }
       fail("CONFLICT", "This loan has changed. Refresh and try again.");
     }
     const now = Date.now();
@@ -87,7 +108,7 @@ export const transition = mutation({
     }
 
     const timestamps =
-      action === "approve" || action === "decline" || action === "cancel"
+      action === "approve" || action === "decline" || action === "cancel" || action === "revoke"
         ? { decidedAt: now }
         : action === "claim_return"
           ? { returnClaimedAt: now }
@@ -133,7 +154,8 @@ async function toRow(ctx: QueryCtx, loan: Doc<"loans">, viewerId: Id<"users">, t
     borrower: { name: borrower?.name ?? "Unknown" },
     lender: { name: lender?.name ?? "Unknown", trustedLender: lender?.trustedLender ?? false },
     overdue: isOverdue(loan, today),
-    allowedActions: allowedActions(loan, viewerId),
+    allowedActions: allowedActions(loan, viewerId, today),
+    expired: isExpired(loan, today),
     // Which side the viewer is on, so the UI never has to guess from names. Null for an admin
     // who is not a party.
     viewerRole: (loan.lenderId === viewerId ? "lender" : loan.borrowerId === viewerId ? "borrower" : null) as
@@ -193,8 +215,14 @@ const SYSTEM_TIMELINE_LABELS: Partial<Record<EventType, string>> = {
   "loan.cancelled": "Cancelled: listing removed",
 };
 
-/** Statuses in which the two parties may see each other's email to arrange pickup. */
-const CONTACT_STATUSES = [...ACTIVE_STATUSES, "returned"] as const;
+/**
+ * Whether the two parties may see each other's email: from approval until CONTACT_WINDOW_DAYS
+ * after the return, long enough to sort out a late question, not forever.
+ */
+function contactVisible(loan: Doc<"loans">, now: number): boolean {
+  if ((ACTIVE_STATUSES as readonly string[]).includes(loan.status)) return true;
+  return loan.status === "returned" && now - (loan.returnedAt ?? 0) <= CONTACT_WINDOW_DAYS * 86_400_000;
+}
 
 /**
  * Loan detail for a party or an admin. The counterpart's email is shown only to a party and
@@ -210,7 +238,7 @@ export const get = query({
     if (!isParty && viewer.role !== "admin") fail("FORBIDDEN", "You can't view this loan.");
 
     let counterpartEmail: string | null = null;
-    if (isParty && (CONTACT_STATUSES as readonly string[]).includes(loan.status)) {
+    if (isParty && contactVisible(loan, Date.now())) {
       const counterpart = await ctx.db.get(viewer._id === loan.borrowerId ? loan.lenderId : loan.borrowerId);
       counterpartEmail = counterpart?.email ?? null;
     }

@@ -18,7 +18,8 @@ http.route({
   handler: signedRoute(async (ctx, body) => {
     const { eventId } = parseBody(z.object({ eventId: id }), body);
     const result = await ctx.runMutation(internal.automation.claimNotification, { eventId });
-    return result.found ? json(200, { proceed: result.proceed }) : notFound();
+    if (!result.found) return notFound();
+    return json(200, result.proceed ? { proceed: true } : { proceed: false, reason: result.reason });
   }),
 });
 

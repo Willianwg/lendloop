@@ -76,15 +76,17 @@ test("action labels match the plan", () => {
     approve: "Approve",
     decline: "Decline",
     cancel: "Cancel request",
+    revoke: "Cancel loan",
     claim_return: "I returned it",
     confirm_return: "Confirm return",
     dispute_return: "Not returned yet",
     mark_returned: "Mark as returned",
   });
-  // Destructive actions go through an AlertDialog.
+  // Destructive actions go through an AlertDialog, and so does the irreversible "Mark as returned".
   for (const meta of Object.values(ACTIONS)) {
-    expect(meta.variant === "destructive").toBe(meta.confirm !== undefined);
+    if (meta.variant === "destructive") expect(meta.confirm).toBeDefined();
   }
+  expect(ACTIONS.mark_returned.confirm).toBeDefined();
 });
 
 test("sortActions puts the main action first", () => {

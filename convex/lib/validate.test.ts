@@ -29,4 +29,13 @@ describe("cleanText", () => {
     // 80 emoji are 160 UTF-16 code units but 80 characters.
     expect(cleanText("🔨".repeat(80), "name", 1, 80)).toHaveLength(160);
   });
+
+  test("rejects control and invisible formatting characters, keeps composed emoji", () => {
+    expect(() => cleanText("Drill\r\nBcc: x", "name", 1, 80)).toThrow(ConvexError);
+    expect(() => cleanText("abc\u202Edef", "name", 1, 80)).toThrow(ConvexError);
+    expect(() => cleanText("a\u0000b", "name", 1, 80)).toThrow(ConvexError);
+    expect(cleanText("Mechanic 👨‍🔧", "name", 1, 80)).toBe("Mechanic 👨‍🔧");
+    expect(cleanText("one\r\ntwo", "description", 1, 280, true)).toBe("one\ntwo");
+    expect(() => cleanText("one\u202Etwo", "description", 1, 280, true)).toThrow(ConvexError);
+  });
 });

@@ -32,6 +32,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
+    .index("by_status", ["status"])
     .index("by_status_category", ["status", "category"]),
 
   // A borrow request and the loan it becomes are the same record.

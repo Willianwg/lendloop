@@ -142,8 +142,11 @@ function DeleteListing({ tool }: { tool: Listing }) {
           <div role="alert" className="flex items-start gap-2.5 rounded-lg bg-warning p-3 text-sm text-warning-foreground">
             <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <div>
-              <p className="font-medium">This tool is currently on loan</p>
-              <p className="mt-0.5">You can delete it once it&apos;s back and the loan is marked returned.</p>
+              <p className="font-medium">This tool has an approved loan</p>
+              <p className="mt-0.5">
+                Delete it once it&apos;s back and marked returned. If the loan hasn&apos;t started, you can cancel it from
+                Incoming first.
+              </p>
             </div>
           </div>
         ) : null}
