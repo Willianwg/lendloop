@@ -1,69 +1,103 @@
-import Image from "next/image";
+import { fetchQuery } from "convex/nextjs";
+import { cacheLife } from "next/cache";
+import { Suspense } from "react";
+import { Logo } from "@/components/brand";
+import { LandingCta } from "@/components/landing-cta";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui-kit/empty-state";
+import { api } from "@/convex/_generated/api";
+import { formatCategory } from "@/lib/format";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-16">
+      <header className="flex h-16 items-center">
+        <Logo size="lg" />
+      </header>
+
+      <main>
+        <section className="pt-10 pb-12 md:pt-20 md:pb-16">
+          <h1 className="max-w-[16ch] text-[2.75rem] leading-[1.02] font-bold tracking-[-0.035em] md:max-w-none md:text-7xl">
+            <span className="block">Borrow what you need.</span>
+            <span className="block">Lend what you don&apos;t.</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-5 max-w-[46ch] text-lg leading-relaxed text-muted-foreground">
+            A shared shelf for your street. List the drill you use twice a year, borrow the ladder you need once,
+            and get a nudge when it&apos;s time to give it back.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+          <div className="mt-8">
+            <LandingCta />
+          </div>
+        </section>
+
+        <section aria-labelledby="shelf-heading">
+          <h2 id="shelf-heading" className="mb-5 text-xl font-semibold tracking-tight">
+            On the shelf now
+          </h2>
+          <Suspense fallback={<ShelfSkeleton />}>
+            <Shelf />
+          </Suspense>
+        </section>
       </main>
+    </div>
+  );
+}
+
+type PublicTool = { _id: string; name: string; category: string };
+
+/**
+ * The public list, cached on the server and refreshed in the background every 30 s
+ * (the Cache Components equivalent of `revalidate = 30`). If Convex is unreachable the
+ * failure is cached for seconds only, which also keeps `next build` working without Convex.
+ */
+async function Shelf() {
+  "use cache";
+  let tools: PublicTool[];
+  try {
+    tools = await fetchQuery(api.tools.listPublic, {});
+    cacheLife({ stale: 30, revalidate: 30, expire: 300 });
+  } catch {
+    cacheLife("seconds");
+    return <p className="text-muted-foreground">The shelf can&apos;t be loaded right now. Refresh in a moment.</p>;
+  }
+
+  if (tools.length === 0) {
+    return (
+      <EmptyState
+        title="The shelf is empty"
+        description="Nobody has listed a tool yet. Sign in and put the first one up."
+      />
+    );
+  }
+
+  return (
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {tools.map((tool) => (
+        <li key={tool._id}>
+          <ToolTag name={tool.name} category={formatCategory(tool.category)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A manila tool tag: notched left edge with a punched hole, the way a tool library labels its stock. */
+function ToolTag({ name, category }: { name: string; category: string }) {
+  return (
+    <div className="tool-tag relative flex h-full min-h-20 flex-col justify-center gap-1 bg-tag py-3 pr-3 pl-9 text-tag-foreground">
+      <span aria-hidden="true" className="absolute top-1/2 left-3.5 size-2.5 -translate-y-1/2 rounded-full bg-background ring-1 ring-tag-foreground/25" />
+      <span className="line-clamp-2 leading-snug font-semibold break-words">{name}</span>
+      <span className="text-sm text-tag-foreground/70">{category}</span>
+    </div>
+  );
+}
+
+function ShelfSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-hidden="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <Skeleton key={i} className="h-20 rounded-md" />
+      ))}
     </div>
   );
 }
