@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata, Viewport } from "next";
 import { Schibsted_Grotesk } from "next/font/google";
+import { SwRegister } from "@/components/sw-register";
 import { BRAND } from "@/lib/brand";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           <Providers>{children}</Providers>
         </ClerkProvider>
+        <SwRegister />
       </body>
     </html>
   );
