@@ -64,7 +64,9 @@ function Availability({ availability }: { availability: ToolView["availability"]
   if (availability.state === "on_loan") {
     return (
       <span className="inline-flex h-6 items-center rounded-full bg-warning px-2.5 text-xs font-medium text-warning-foreground">
-        On loan until {formatIsoDate(availability.until)}
+        {availability.until < new Date().toISOString().slice(0, 10)
+          ? "On loan"
+          : `On loan until ${formatIsoDate(availability.until)}`}
       </span>
     );
   }

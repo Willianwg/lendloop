@@ -185,8 +185,12 @@ describe("tools for signed-in users", () => {
     await t.run((ctx) => ctx.db.patch(loanId, { status: "return_claimed" }));
     expect((await asJoao.query(api.tools.get, { toolId }))?.availability).toEqual({ state: "on_loan", until: "2026-11-09" });
 
-    // The next UTC day it is available again.
+    // Past the end date the tool is still out (the return is only claimed): still on loan.
     vi.setSystemTime(Date.UTC(2026, 10, 10, 0, 1));
+    expect((await asJoao.query(api.tools.get, { toolId }))?.availability).toEqual({ state: "on_loan", until: "2026-11-09" });
+
+    // Once the lender confirms the return, it is available again.
+    await t.run((ctx) => ctx.db.patch(loanId, { status: "returned" }));
     expect((await asJoao.query(api.tools.get, { toolId }))?.availability).toEqual({ state: "available" });
   });
 
@@ -204,5 +208,32 @@ describe("tools for signed-in users", () => {
     const mine = await t.withIdentity(identity("ana")).query(api.tools.mine, {});
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatchObject({ name: "Drill", isMine: true, pendingRequests: 2 });
+  });
+});
+
+describe("availability of overdue loans", () => {
+  test("a tool whose approved loan is past its end date still shows as on loan", async () => {
+    const t = setup();
+    const ana = await insertUser(t, "ana");
+    const joao = await insertUser(t, "joao");
+    const drill = await insertTool(t, ana, { name: "Drill" });
+    const today = new Date().toISOString().slice(0, 10);
+    const daysAgo = (n: number) => new Date(Date.parse(today) - n * 86_400_000).toISOString().slice(0, 10);
+    await insertLoan(t, { toolId: drill, borrowerId: joao, startDate: daysAgo(10), endDate: daysAgo(3), status: "approved" });
+
+    const [card] = await t.withIdentity(identity("joao")).query(api.tools.list, {});
+    expect(card.availability).toEqual({ state: "on_loan", until: daysAgo(3) });
+  });
+
+  test("a future approved loan does not make the tool unavailable today", async () => {
+    const t = setup();
+    const ana = await insertUser(t, "ana");
+    const joao = await insertUser(t, "joao");
+    const drill = await insertTool(t, ana, { name: "Drill" });
+    const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    await insertLoan(t, { toolId: drill, borrowerId: joao, startDate: inDays(5), endDate: inDays(7), status: "approved" });
+
+    const [card] = await t.withIdentity(identity("joao")).query(api.tools.list, {});
+    expect(card.availability).toEqual({ state: "available" });
   });
 });

@@ -134,6 +134,12 @@ async function toRow(ctx: QueryCtx, loan: Doc<"loans">, viewerId: Id<"users">, t
     lender: { name: lender?.name ?? "Unknown", trustedLender: lender?.trustedLender ?? false },
     overdue: isOverdue(loan, today),
     allowedActions: allowedActions(loan, viewerId),
+    // Which side the viewer is on, so the UI never has to guess from names. Null for an admin
+    // who is not a party.
+    viewerRole: (loan.lenderId === viewerId ? "lender" : loan.borrowerId === viewerId ? "borrower" : null) as
+      | "lender"
+      | "borrower"
+      | null,
     lastActivity: latest ? { kind: latest.kind, detail: latest.detail, at: latest.at } : null,
   };
 }

@@ -103,7 +103,11 @@ export function ListingsTable() {
 
 function Availability({ tool, today }: { tool: Listing; today: string }) {
   return tool.availability.state === "on_loan" ? (
-    <Badge className="bg-info text-info-foreground">On loan until {formatDay(tool.availability.until, today)}</Badge>
+    tool.availability.until < today ? (
+      <Badge className="bg-destructive text-white">Overdue since {formatDay(tool.availability.until, today)}</Badge>
+    ) : (
+      <Badge className="bg-info text-info-foreground">On loan until {formatDay(tool.availability.until, today)}</Badge>
+    )
   ) : (
     <span className="text-sm text-muted-foreground">Available</span>
   );

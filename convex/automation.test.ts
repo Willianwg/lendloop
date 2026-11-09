@@ -294,7 +294,7 @@ describe("signed automation endpoints", () => {
 
     const health = await t.withIdentity(identity("root")).query(api.automation.adminHealth, {});
     expect(health).toEqual({
-      failedDeliveries: [{ eventId: "e-1", type: "loan.approved", attempts: 6, lastError: "HTTP 502", at: NOW - 1000 }],
+      failedDeliveries: [{ eventId: "e-1", loanId, type: "loan.approved", attempts: 6, lastError: "HTTP 502", at: NOW - 1000 }],
       workflowErrors: [{ detail: "Notify: boom", at: NOW }],
     });
   });

@@ -280,7 +280,7 @@ describe("loan queries", () => {
     const [incomingForMei] = await as("mei").query(api.loans.incoming, {});
     expect(incomingForMei).toMatchObject({ _id: a1, tool: { name: "Tent" }, borrower: { name: "Ana" }, allowedActions: ["mark_returned"] });
     expect(Object.keys(incomingForMei).sort()).toEqual(
-      ["_id", "allowedActions", "borrower", "endDate", "lastActivity", "lender", "overdue", "startDate", "status", "tool"].sort(),
+      ["_id", "allowedActions", "borrower", "endDate", "lastActivity", "lender", "overdue", "startDate", "status", "tool", "viewerRole"].sort(),
     );
     expect((await errorOf(t.query(api.loans.incoming, {}))).code).toBe("UNAUTHENTICATED");
   });
@@ -334,5 +334,24 @@ describe("tool removal and pending loans", () => {
     // The lender can still finish the loan that is out.
     await as("ana").mutation(api.loans.transition, { loanId: out, action: "mark_returned" });
     expect((await loanRow(t, out))?.status).toBe("returned");
+  });
+});
+
+describe("viewerRole on loan rows", () => {
+  test("rows say which side the viewer is on, even when both parties share a name", async () => {
+    const { t, ana, joao, drill, as, root } = await world();
+    // Same display name on both sides: the server must still tell them apart.
+    await t.run((ctx) => ctx.db.patch(joao, { name: "Ana" }));
+    const loan = await loanAt(t, drill, joao, "approved");
+
+    expect((await as("ana").query(api.loans.incoming, {}))[0].viewerRole).toBe("lender");
+    expect((await as("joao").query(api.loans.myRequests, {}))[0].viewerRole).toBe("borrower");
+    expect((await as("ana").query(api.loans.get, { loanId: loan })).viewerRole).toBe("lender");
+    expect((await as("joao").query(api.loans.get, { loanId: loan })).viewerRole).toBe("borrower");
+    // An admin who is not a party sees the loan with no side.
+    expect((await as("root").query(api.loans.get, { loanId: loan })).viewerRole).toBeNull();
+    expect((await as("root").query(api.loans.adminList, {}))[0].viewerRole).toBeNull();
+    void ana;
+    void root;
   });
 });

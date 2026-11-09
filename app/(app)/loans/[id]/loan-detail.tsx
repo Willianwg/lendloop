@@ -14,7 +14,6 @@ import {
   overdueDays,
   pluralDays,
   todayUtc,
-  viewerRole,
   type ViewerRole,
 } from "@/components/loan-view";
 import { Button } from "@/components/ui/button";
@@ -61,9 +60,8 @@ export function LoanDetail({ loanId }: { loanId: string }) {
   }
 
   const loan = result.data;
-  const myName = me.status === "success" ? me.data?.name : null;
   const isAdmin = me.status === "success" && me.data?.role === "admin";
-  const role = viewerRole(loan, myName);
+  const role = loan.viewerRole;
   const back = BACK[role ?? (isAdmin ? "admin" : "borrower")];
   const counterpartName = role === "borrower" ? loan.lender.name : role === "lender" ? loan.borrower.name : null;
   const today = todayUtc();

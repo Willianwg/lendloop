@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import type { LoanAction } from "@/convex/lib/loans";
 import {
   ACTIONS,
   activityText,
@@ -13,7 +12,6 @@ import {
   pluralDays,
   sortActions,
   todayUtc,
-  viewerRole,
 } from "./loan-view";
 
 describe("dates", () => {
@@ -94,29 +92,6 @@ test("sortActions puts the main action first", () => {
   expect(sortActions(["dispute_return", "confirm_return"])).toEqual(["confirm_return", "dispute_return"]);
 });
 
-describe("viewerRole", () => {
-  const row = (allowedActions: LoanAction[], borrower = "Bruno", lender = "Ana") => ({
-    allowedActions,
-    borrower: { name: borrower },
-    lender: { name: lender },
-  });
-
-  test("reads the offered actions first", () => {
-    expect(viewerRole(row(["approve", "decline"]), null)).toBe("lender");
-    expect(viewerRole(row(["claim_return"]), "Ana")).toBe("borrower");
-  });
-
-  test("falls back to the viewer's name", () => {
-    expect(viewerRole(row([]), "Ana")).toBe("lender");
-    expect(viewerRole(row([]), "Bruno")).toBe("borrower");
-  });
-
-  test("is null when it can't tell", () => {
-    expect(viewerRole(row([]), "Carla")).toBeNull();
-    expect(viewerRole(row([]), undefined)).toBeNull();
-    expect(viewerRole(row([], "Sam", "Sam"), "Sam")).toBeNull();
-  });
-});
 
 test("eventLabel", () => {
   expect(eventLabel("loan.return_claimed")).toBe("Return claim");

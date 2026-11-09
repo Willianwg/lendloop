@@ -177,6 +177,7 @@ export const adminHealth = query({
     return {
       failedDeliveries: failed.map((d) => ({
         eventId: d.eventId,
+        loanId: d.loanId,
         type: d.type,
         attempts: d.attempts,
         lastError: d.lastError ?? null,

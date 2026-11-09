@@ -140,27 +140,8 @@ export function sortActions(actions: readonly LoanAction[]): LoanAction[] {
   return [...actions].sort((a, b) => ACTION_ORDER.indexOf(a) - ACTION_ORDER.indexOf(b));
 }
 
-const LENDER_ACTIONS: readonly LoanAction[] = ["approve", "decline", "confirm_return", "dispute_return", "mark_returned"];
-const BORROWER_ACTIONS: readonly LoanAction[] = ["cancel", "claim_return"];
-
+/** Which side of the loan the viewer is on, as computed by the server (`LoanRow.viewerRole`). */
 export type ViewerRole = "borrower" | "lender" | null;
-
-/**
- * Which side of the loan the viewer is on. The loan row carries no user ids, so this reads the
- * offered actions first (they are computed for the viewer) and falls back to the viewer's name.
- * Returns null when it can't tell (e.g. an admin, or both parties share a name).
- */
-export function viewerRole(
-  row: { allowedActions: readonly LoanAction[]; borrower: { name: string }; lender: { name: string } },
-  myName: string | null | undefined,
-): ViewerRole {
-  if (row.allowedActions.some((a) => LENDER_ACTIONS.includes(a))) return "lender";
-  if (row.allowedActions.some((a) => BORROWER_ACTIONS.includes(a))) return "borrower";
-  if (!myName || row.borrower.name === row.lender.name) return null;
-  if (myName === row.lender.name) return "lender";
-  if (myName === row.borrower.name) return "borrower";
-  return null;
-}
 
 const EVENT_LABELS: Record<EventType, string> = {
   "loan.requested": "Request",

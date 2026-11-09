@@ -43,11 +43,10 @@ export type Availability = { state: "available" } | { state: "on_loan"; until: s
  */
 async function toCard(ctx: QueryCtx, tool: Doc<"tools">, viewerId: Id<"users">, today: string) {
   const owner = await ctx.db.get(tool.ownerId);
-  // "On loan" means an active loan covers today (spec §6). An overdue loan (endDate < today)
-  // doesn't count: the card follows the agreed dates, and overdue handling is the reminders' job.
-  const current = (await activeLoansOfTool(ctx, tool._id)).find(
-    (loan) => loan.startDate <= today && today <= loan.endDate,
-  );
+  // "On loan" means an active loan has started and the tool hasn't come back. That includes an
+  // overdue loan (endDate < today): the tool is still out, so showing "Available" would mislead
+  // neighbours and the admin. A future approved loan doesn't block today.
+  const current = (await activeLoansOfTool(ctx, tool._id)).find((loan) => loan.startDate <= today);
   const availability: Availability = current ? { state: "on_loan", until: current.endDate } : { state: "available" };
   return {
     _id: tool._id,
