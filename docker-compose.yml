@@ -50,6 +50,8 @@ services:
       - N8N_TO_CONVEX_SECRET=${N8N_TO_CONVEX_SECRET:?run scripts/setup.sh to create .env}
       - LENDLOOP_CONVEX_SITE_URL=http://convex-backend:3211
       - LENDLOOP_APP_URL=http://localhost:${APP_PORT:-3000}
+      # Links in ops emails point at the host port, not the container port.
+      - N8N_EDITOR_BASE_URL=http://localhost:${N8N_PORT:-5678}
       # Code nodes need Node's crypto for HMAC and $env for the secrets (see README → n8n trade-off).
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - NODE_FUNCTION_ALLOW_BUILTIN=crypto
