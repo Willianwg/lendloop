@@ -19,6 +19,7 @@ import type * as lib_loans from "../lib/loans.js";
 import type * as lib_outbox from "../lib/outbox.js";
 import type * as lib_signature from "../lib/signature.js";
 import type * as lib_validate from "../lib/validate.js";
+import type * as loans from "../loans.js";
 import type * as tools from "../tools.js";
 import type * as users from "../users.js";
 
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "lib/outbox": typeof lib_outbox;
   "lib/signature": typeof lib_signature;
   "lib/validate": typeof lib_validate;
+  loans: typeof loans;
   tools: typeof tools;
   users: typeof users;
 }>;
