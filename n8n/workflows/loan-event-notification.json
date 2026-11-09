@@ -1,0 +1,572 @@
+{
+  "id": "LendLoopNotify01",
+  "name": "LendLoop · Loan event notification",
+  "active": false,
+  "nodes": [
+    {
+      "id": "fcdbcad6-1c00-4b31-ac14-4f9a87ab2c4a",
+      "name": "Loan event webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "9c915c7d-77aa-4a8a-a773-69e5161cf4a6",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lendloop-loan-events",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "30b36148-409c-4ae6-aec7-9cc4f15f88fd",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Checks the X-LendLoop-Signature header Convex put on this request (spec §8.3).\n// Same algorithm as verifyRequest in convex/lib/signature.ts:\n//   header \"t=<unix>,v1=<hex>\", |now - t| <= 300 s,\n//   v1 == HMAC-SHA256(CONVEX_TO_N8N_SECRET, `${t}.POST./webhook/lendloop-loan-events.${rawBody}`)\nconst crypto = require('crypto');\nconst TOLERANCE_SECONDS = 300;\nconst PATH = '/webhook/lendloop-loan-events';\n\nfunction verify(secret, method, path, rawBody, header) {\n  if (!header) return { ok: false, reason: 'missing' };\n  const m = /^t=(\\d{1,12}),v1=([0-9a-f]{64})$/.exec(header.trim());\n  if (!m) return { ok: false, reason: 'malformed' };\n  const t = Number(m[1]);\n  if (Math.abs(Math.floor(Date.now() / 1000) - t) > TOLERANCE_SECONDS) return { ok: false, reason: 'stale' };\n  const expected = crypto.createHmac('sha256', secret).update(`${t}.${method}.${path}.${rawBody}`, 'utf8').digest();\n  // Constant-time comparison; both sides are 32 bytes.\n  return crypto.timingSafeEqual(expected, Buffer.from(m[2], 'hex')) ? { ok: true } : { ok: false, reason: 'mismatch' };\n}\n\n// The Webhook node (\"Raw Body\" on) keeps the exact bytes it received in binary property \"data\".\nconst input = $input.first();\nconst rawBody = input.binary?.data ? (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8') : '';\nconst result = verify($env.CONVEX_TO_N8N_SECRET, 'POST', PATH, rawBody, input.json.headers['x-lendloop-signature']);\n\n// Parse only once the signature checks out. Later nodes read the event from here.\nreturn [{ json: result.ok ? { ok: true, event: JSON.parse(rawBody) } : { ok: false, reason: result.reason } }];\n"
+      }
+    },
+    {
+      "id": "068239ea-ab1a-4068-aa52-f6f026aa5bf9",
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4b1c8d0c-dba4-4e5f-a8d1-a9bbef978679",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d9436c2a-392c-4ae2-ac92-87c8f5a99ede",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\":\"unauthorized\"}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "8b55e78d-fcca-4a2c-ab2a-cb843005a469",
+      "name": "Sign claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// --- sign: identical in every LendLoop workflow (spec §8.3) ---\n// Same algorithm as signRequest in convex/lib/signature.ts:\n//   X-LendLoop-Signature: t=<unix seconds>,v1=HMAC-SHA256(secret, `${t}.${METHOD}.${path}.${body}`)\n// The HTTP Request node sends `rawBody` as a raw string, so the signed bytes are the sent bytes.\nconst crypto = require('crypto');\nfunction sign(method, path, body) {\n  const t = Math.floor(Date.now() / 1000);\n  const v1 = crypto\n    .createHmac('sha256', $env.N8N_TO_CONVEX_SECRET)\n    .update(`${t}.${method}.${path}.${body}`, 'utf8')\n    .digest('hex');\n  const base = $env.LENDLOOP_CONVEX_SITE_URL.replace(/\\/$/, '');\n  return { url: base + path, signature: `t=${t},v1=${v1}`, rawBody: body };\n}\n// --- end sign ---\n\n// Ask Convex for the right to send this event's email (a 5-minute lease). Convex answers\n// proceed: false if the event was already notified or another run holds the lease.\nconst { eventId } = $('Verify signature').first().json.event;\nreturn [{ json: sign('POST', '/automation/notifications/claim', JSON.stringify({ eventId })) }];\n"
+      }
+    },
+    {
+      "id": "c371ecd9-8a9b-4b06-a254-c117029bf1a2",
+      "name": "Claim event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LendLoop-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.rawBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "f54d48ae-b8a5-44e5-a863-b4ad0f3fe0a1",
+      "name": "Proceed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3091dbc4-441a-409c-a761-93de14923def",
+              "leftValue": "={{ $json.proceed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aa51ddb2-53db-4b5b-a059-29b95e643e0d",
+      "name": "Respond duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"duplicate\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "f545001e-1217-4306-ad72-21ea22533bd7",
+      "name": "Build email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Everything a user typed (names, tool names) goes through escapeHtml before it reaches\n// the HTML, so a tool called \"<b>Drill</b> & Saw\" shows up literally (Review Focus 3).\nconst escapeHtml = (s) =>\n  String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]);\n\n// \"2026-11-12\" -> \"Thu, 12 Nov 2026\". Loan dates are UTC calendar dates.\nconst formatDate = (d) =>\n  new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });\n\n// One plain layout for every LendLoop email. All arguments are plain text; this escapes them.\nfunction layout({ greetingName, line, detail, link, cta }) {\n  return [\n    '<div style=\"font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;color:#18181b;line-height:1.5\">',\n    `<p>Hi ${escapeHtml(greetingName)},</p>`,\n    `<p>${escapeHtml(line)}</p>`,\n    `<p style=\"padding:12px 16px;background:#f4f4f5;border-radius:8px\">${detail.map(escapeHtml).join('<br>')}</p>`,\n    `<p><a href=\"${escapeHtml(link)}\" style=\"display:inline-block;padding:10px 16px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none\">${escapeHtml(cta)}</a></p>`,\n    '<p style=\"color:#71717a;font-size:12px\">You get this email because you use LendLoop.</p>',\n    '</div>',\n  ].join('\\n');\n}\n\n// Builds the email for one loan event (payload: spec §8.1). The recipient comes from the\n// payload; Convex already picked lender or borrower.\nconst e = $('Verify signature').first().json.event;\nconst tool = e.tool.name;\nconst actor = e.actor?.name;\n// Convex names the system \"LendLoop\" when nobody acted (auto-decline, listing removed).\nconst bySystem = !actor || actor === 'LendLoop';\n\n// One entry per event type: subject, the sentence that says what happened, the button label.\nconst templates = {\n  'loan.requested': {\n    subject: `New request to borrow your ${tool}`,\n    line: `${actor} would like to borrow your ${tool}.`,\n    cta: 'Review the request',\n  },\n  'loan.approved': {\n    subject: `Approved: you can borrow ${tool}`,\n    line: `${actor} approved your request to borrow ${tool}. The loan page shows their email so you can arrange pickup.`,\n    cta: 'Open the loan',\n  },\n  'loan.declined': {\n    subject: `Request declined: ${tool}`,\n    line: bySystem\n      ? `Your request to borrow ${tool} was declined because another request for those dates was approved.`\n      : `${actor} declined your request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.cancelled': {\n    subject: `Request cancelled: ${tool}`,\n    line: bySystem\n      ? `The request to borrow ${tool} was cancelled because the listing is no longer available.`\n      : `${actor} cancelled the request to borrow ${tool}.`,\n    cta: 'Open the request',\n  },\n  'loan.return_claimed': {\n    subject: `Please confirm the return of your ${tool}`,\n    line: `${actor} says they returned your ${tool}. Please confirm the return, or dispute it if you have not got it back.`,\n    cta: 'Confirm or dispute',\n  },\n  'loan.returned': {\n    subject: `Return confirmed: ${tool}`,\n    line: `${actor} confirmed that ${tool} is back. Thanks for returning it!`,\n    cta: 'Open the loan',\n  },\n  'loan.return_disputed': {\n    subject: `Return disputed: ${tool}`,\n    line: `${actor} says ${tool} has not come back yet, so the loan is still open. Please get in touch with them.`,\n    cta: 'Open the loan',\n  },\n};\n\nconst t = templates[e.type];\nif (!t) throw new Error(`Unknown event type: ${e.type}`);\n\nconst link = `${$env.LENDLOOP_APP_URL}/loans/${encodeURIComponent(e.loan.id)}`;\nconst dates = `${formatDate(e.loan.startDate)} – ${formatDate(e.loan.endDate)}`;\n\nreturn [{\n  json: {\n    to: e.recipient.email,\n    subject: t.subject,\n    html: layout({ greetingName: e.recipient.name, line: t.line, detail: [tool, dates], link, cta: t.cta }),\n    text: `Hi ${e.recipient.name},\\n\\n${t.line}\\n\\n${tool}\\n${dates}\\n\\n${t.cta}: ${link}\\n`,\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "e5980898-c48c-40c2-ad33-582daeba5166",
+      "name": "Send email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "smtp": {
+          "id": null,
+          "name": "Mailpit SMTP"
+        }
+      },
+      "parameters": {
+        "fromEmail": "LendLoop <notifications@lendloop.local>",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "f6d98b3f-6809-4986-aaab-a12804e17f2e",
+      "name": "Mark sent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1920,
+        -100
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "87c4cd0d-bd6c-4252-ad0d-c134fef683c4",
+              "name": "status",
+              "value": "sent",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "64567fc9-fb52-46d3-a6c2-5309f2c05870",
+      "name": "Mark failed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1920,
+        100
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "32384a52-6dfa-4db5-a0ca-f866077e8a00",
+              "name": "status",
+              "value": "failed",
+              "type": "string"
+            },
+            {
+              "id": "e1d9a172-cf36-4feb-a4aa-4da4fa5eb47f",
+              "name": "error",
+              "value": "={{ $json.error }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c8a72880-c444-4397-a315-4d3999f8baad",
+      "name": "Sign result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// --- sign: identical in every LendLoop workflow (spec §8.3) ---\n// Same algorithm as signRequest in convex/lib/signature.ts:\n//   X-LendLoop-Signature: t=<unix seconds>,v1=HMAC-SHA256(secret, `${t}.${METHOD}.${path}.${body}`)\n// The HTTP Request node sends `rawBody` as a raw string, so the signed bytes are the sent bytes.\nconst crypto = require('crypto');\nfunction sign(method, path, body) {\n  const t = Math.floor(Date.now() / 1000);\n  const v1 = crypto\n    .createHmac('sha256', $env.N8N_TO_CONVEX_SECRET)\n    .update(`${t}.${method}.${path}.${body}`, 'utf8')\n    .digest('hex');\n  const base = $env.LENDLOOP_CONVEX_SITE_URL.replace(/\\/$/, '');\n  return { url: base + path, signature: `t=${t},v1=${v1}`, rawBody: body };\n}\n// --- end sign ---\n\n// Tell Convex how the email went. Convex records it once per event (idempotent by eventId).\nconst { eventId } = $('Verify signature').first().json.event;\nconst { status } = $input.first().json; // \"sent\" or \"failed\", set by the Mark nodes\nconst body = JSON.stringify({ eventId, status, executionId: $execution.id });\nreturn [{ json: { ...sign('POST', '/automation/notifications/result', body), status } }];\n"
+      }
+    },
+    {
+      "id": "28425cbd-9bbb-4110-a796-9192aa2bff84",
+      "name": "Write back result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LendLoop-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.rawBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "eb3aaa6b-cbde-4815-abf3-cf1ab5a82145",
+      "name": "Email sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7dc641db-b903-4d94-a679-e75522395f0d",
+              "leftValue": "={{ $('Sign result').first().json.status }}",
+              "rightValue": "sent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0b5c22d6-578f-4c96-afb5-48cceea9d3c8",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2880,
+        -100
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "e721c29b-72b4-4a00-a128-868865d1f9b2",
+      "name": "Fail: email not sent",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2880,
+        100
+      ],
+      "parameters": {
+        "errorMessage": "=Email could not be sent: {{ $('Mark failed').first().json.error }}"
+      }
+    }
+  ],
+  "connections": {
+    "Loan event webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Sign claim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign claim": {
+      "main": [
+        [
+          {
+            "node": "Claim event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim event": {
+      "main": [
+        [
+          {
+            "node": "Proceed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proceed?": {
+      "main": [
+        [
+          {
+            "node": "Build email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build email": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
+      "main": [
+        [
+          {
+            "node": "Mark sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark sent": {
+      "main": [
+        [
+          {
+            "node": "Sign result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark failed": {
+      "main": [
+        [
+          {
+            "node": "Sign result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign result": {
+      "main": [
+        [
+          {
+            "node": "Write back result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write back result": {
+      "main": [
+        [
+          {
+            "node": "Email sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email sent?": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail: email not sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "LendLoopErrors01",
+    "timezone": "UTC",
+    "saveManualExecutions": true
+  },
+  "tags": []
+}
