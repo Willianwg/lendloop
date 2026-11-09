@@ -2,7 +2,9 @@
 import { convexTest } from "convex-test";
 import schema from "../schema";
 import { modules } from "../test.setup";
-import type { Id } from "../_generated/dataModel";
+import { ConvexError } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { LoanStatus } from "./constants";
 
 export function setup() {
   return convexTest(schema, modules);
@@ -36,4 +38,48 @@ export async function insertUser(
       updatedAt: Date.now(),
     }),
   );
+}
+
+/** Awaits `p`, expecting it to throw a ConvexError, and returns the error's `{ code, message }`. */
+export async function errorOf(p: Promise<unknown>): Promise<{ code: string; message: string }> {
+  try {
+    await p;
+  } catch (e) {
+    if (e instanceof ConvexError) return e.data as { code: string; message: string };
+    throw e;
+  }
+  throw new Error("expected the call to fail");
+}
+
+/** Inserts an active tool owned by `ownerId` and returns its id. */
+export async function insertTool(
+  t: TestConvex,
+  ownerId: Id<"users">,
+  fields: Partial<Omit<Doc<"tools">, "_id" | "_creationTime" | "ownerId">> = {},
+): Promise<Id<"tools">> {
+  return t.run((ctx) =>
+    ctx.db.insert("tools", {
+      ownerId,
+      name: "Drill",
+      category: "power_tools",
+      condition: "good",
+      description: "Cordless, two batteries",
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...fields,
+    }),
+  );
+}
+
+/** Inserts a loan row directly (no events) and returns its id. The lender is the tool owner. */
+export async function insertLoan(
+  t: TestConvex,
+  a: { toolId: Id<"tools">; borrowerId: Id<"users">; startDate: string; endDate: string; status: LoanStatus },
+): Promise<Id<"loans">> {
+  return t.run(async (ctx) => {
+    const tool = await ctx.db.get(a.toolId);
+    if (!tool) throw new Error("insertLoan: unknown tool");
+    return ctx.db.insert("loans", { ...a, lenderId: tool.ownerId, createdAt: Date.now(), updatedAt: Date.now() });
+  });
 }
