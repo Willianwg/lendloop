@@ -1,0 +1,87 @@
+# Local stack for LendLoop. Everything except Clerk runs here.
+# Host ports are configurable so several copies of the stack can run side by side
+# (e.g. one per git worktree). Container-internal ports and service names never change.
+name: ${COMPOSE_PROJECT_NAME:-lendloop}
+
+services:
+  convex-backend:
+    image: ghcr.io/convex/convex-backend@sha256:e9c084e8bd6c1f249012c672193f0988c748824f55a24cdad45f6185a8462f9a
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    ports:
+      - "127.0.0.1:${CONVEX_PORT:-3210}:3210"
+      - "127.0.0.1:${CONVEX_SITE_PORT:-3211}:3211"
+    volumes:
+      - convex-data:/convex/data
+    environment:
+      - CONVEX_CLOUD_ORIGIN=http://127.0.0.1:${CONVEX_PORT:-3210}
+      - CONVEX_SITE_ORIGIN=http://127.0.0.1:${CONVEX_SITE_PORT:-3211}
+      - DISABLE_BEACON=true
+      - RUST_LOG=info
+    healthcheck:
+      test: curl -f http://localhost:3210/version
+      interval: 5s
+      start_period: 10s
+
+  convex-dashboard:
+    image: ghcr.io/convex/convex-dashboard@sha256:caf95d3f2241cddc103a84b728294fa0777c6acc291a2c4612c1d06faaa1c43a
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    ports:
+      - "127.0.0.1:${CONVEX_DASHBOARD_PORT:-6791}:6791"
+    environment:
+      - NEXT_PUBLIC_DEPLOYMENT_URL=http://127.0.0.1:${CONVEX_PORT:-3210}
+    depends_on:
+      convex-backend:
+        condition: service_healthy
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.46.7
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    # n8n receives only what its workflows need: its own encryption key, the two
+    # HMAC secrets and the internal URLs. Never the Convex admin key or the Clerk secret.
+    # The encryption key (which decrypts every stored n8n credential) comes from a file, not
+    # the environment, so Code nodes can't read it through $env.
+    secrets:
+      - n8n_encryption_key
+    environment:
+      - N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n_encryption_key
+      - CONVEX_TO_N8N_SECRET=${CONVEX_TO_N8N_SECRET:?run scripts/setup.sh to create .env}
+      - N8N_TO_CONVEX_SECRET=${N8N_TO_CONVEX_SECRET:?run scripts/setup.sh to create .env}
+      - LENDLOOP_CONVEX_SITE_URL=http://convex-backend:3211
+      - LENDLOOP_APP_URL=http://localhost:${APP_PORT:-3000}
+      # Links in ops emails point at the host port, not the container port.
+      - N8N_EDITOR_BASE_URL=http://localhost:${N8N_PORT:-5678}
+      # Code nodes need Node's crypto for HMAC and $env for the secrets (see README → n8n trade-off).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      - GENERIC_TIMEZONE=UTC
+      - TZ=UTC
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - N8N_SECURE_COOKIE=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+    depends_on:
+      convex-backend:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+
+secrets:
+  n8n_encryption_key:
+    file: ./.secrets/n8n_encryption_key # created by scripts/setup.sh, git-ignored
+
+volumes:
+  convex-data:
+  n8n-data:
