@@ -2,7 +2,7 @@
 // For testing the Notify workflow without the app.
 //
 //   npx tsx scripts/dev/send-loan-event.ts [--type loan.approved] [--name "João"] [--tool "<b>Drill</b> & Saw"]
-//        [--event-id <uuid>] [--to someone@example.com] [--bad-signature] [--url http://localhost:5878/webhook/lendloop-loan-events]
+//        [--event-id <uuid>] [--to someone@example.com] [--bad-signature] [--url http://localhost:5678/webhook/lendloop-loan-events]
 import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { SIGNATURE_HEADER, signRequest } from "../../convex/lib/signature";
@@ -17,7 +17,7 @@ const { values: a } = parseArgs({
     to: { type: "string", default: "borrower@example.com" },
     "event-id": { type: "string" },
     "bad-signature": { type: "boolean", default: false },
-    url: { type: "string", default: `http://localhost:${process.env.N8N_PORT ?? 5878}/webhook/lendloop-loan-events` },
+    url: { type: "string", default: `http://localhost:${process.env.N8N_PORT ?? 5678}/webhook/lendloop-loan-events` },
   },
 });
 

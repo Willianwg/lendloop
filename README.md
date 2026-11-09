@@ -560,7 +560,8 @@ Failure-by-failure behavior (n8n down, SMTP down, n8n crash mid-run, Convex rest
   - inline credential `data` or `pinData` in n8n exports.
 
   It prints file and line, never the value, and runs as part of `npm test`.
-- `.env` and `.env.local` are git-ignored, and `setup.sh` writes them with mode 600.
+- `.env`, `.env.local` and `.secrets/` are git-ignored. `setup.sh` writes the env files with mode 600 and keeps
+  `.secrets/` at mode 700 (the key file inside is 644 so the n8n container user can read the mount).
 
 #### The n8n env trade-off
 
@@ -594,7 +595,7 @@ smoke-test helpers in `convex/devtools.ts`. The [production section](#running-th
 
 | Command | What it does |
 |---|---|
-| `npm test` | Runs `scripts/check-no-secrets.sh`, then Vitest: 261 tests in 17 files at the time of writing |
+| `npm test` | Runs Vitest (300 tests in 17 files at the time of writing), then `scripts/check-no-secrets.sh` |
 | `npm run smoke` | End-to-end against the running stack: 7 checks through Convex, n8n and Mailpit |
 | `npm run typecheck` | `next typegen` and `tsc --noEmit` |
 | `npm run lint` | ESLint |

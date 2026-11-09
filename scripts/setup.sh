@@ -73,4 +73,6 @@ npx convex dev --once
 say "Importing n8n credentials and workflows"
 scripts/n8n-import.sh
 
-say "Done. Next: npm run dev → http://localhost:3000"
+APP_PORT=$(env_get .env APP_PORT); APP_PORT=${APP_PORT:-3000}
+if [ "$APP_PORT" = 3000 ]; then say "Done. Next: npm run dev → http://localhost:3000"
+else say "Done. Next: npm run dev -- -p ${APP_PORT} → http://localhost:${APP_PORT}"; fi
