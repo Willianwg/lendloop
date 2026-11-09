@@ -87,3 +87,9 @@ export const vAutomationEventKind = v.union(
   v.literal("workflow_error"),
 );
 export const vRole = v.union(v.literal("user"), v.literal("admin"));
+
+/**
+ * Outbox delays between delivery attempts: the initial try plus one retry per entry
+ * (30 s, 2 min, 10 min, 30 min, 2 h). After the last retry fails the delivery is `failed`.
+ */
+export const BACKOFF_MS = [30_000, 120_000, 600_000, 1_800_000, 7_200_000] as const;
