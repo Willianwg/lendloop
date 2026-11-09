@@ -37,13 +37,15 @@ say "Starting containers"
 docker compose up -d --wait
 
 # 3. Convex CLI target -------------------------------------------------------------
-if [ -z "$(env_get .env.local CONVEX_SELF_HOSTED_ADMIN_KEY)" ]; then
+env_set .env.local CONVEX_SELF_HOSTED_URL "http://127.0.0.1:${CONVEX_PORT}"
+env_set .env.local NEXT_PUBLIC_CONVEX_URL "http://127.0.0.1:${CONVEX_PORT}"
+# A fresh convex-data volume (e.g. after `docker compose down -v`) has a new instance secret
+# and rejects the previous admin key, so regenerate it when it is missing or no longer accepted.
+if [ -z "$(env_get .env.local CONVEX_SELF_HOSTED_ADMIN_KEY)" ] || ! npx convex env list >/dev/null 2>&1; then
   say "Generating Convex admin key"
   admin_key=$(docker compose exec -T convex-backend ./generate_admin_key.sh | tail -1)
   env_set .env.local CONVEX_SELF_HOSTED_ADMIN_KEY "$admin_key"
 fi
-env_set .env.local CONVEX_SELF_HOSTED_URL "http://127.0.0.1:${CONVEX_PORT}"
-env_set .env.local NEXT_PUBLIC_CONVEX_URL "http://127.0.0.1:${CONVEX_PORT}"
 
 # 4. Convex deployment env --------------------------------------------------------
 issuer=$(env_get .env.local CLERK_JWT_ISSUER_DOMAIN)
