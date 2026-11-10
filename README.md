@@ -606,7 +606,7 @@ smoke-test helpers in `convex/devtools.ts`. The [production section](#running-th
 - **RBAC matrix:** each mutation and query as anonymous, another user, the owner or party, and an admin. That
   includes "admins can't act on other people's loans", "`users.adminList` never includes email" and
   "`listPublic` exposes only id, name and category".
-- **State machine:** every action × every status × lender / borrower / stranger, checked against the spec diagram
+- **State machine:** every action × every status × lender / borrower / stranger, checked against the state diagram
   written out independently. It also covers the date rules, the overlap rules, auto-decline, and "every transition
   enqueues exactly one event to the right recipient".
 - **Signatures:**
@@ -617,7 +617,7 @@ smoke-test helpers in `convex/devtools.ts`. The [production section](#running-th
     another.
 - **Idempotency:** the claim lease (exclusive below 5 minutes, re-claimable after), the release on a `failed`
   result, result write-back replays, the reminder upsert and key format, and error de-duplication by execution id.
-- **Outbox:** the payload contains only the spec's fields, the request is signed, 2xx marks it sent, and the full
+- **Outbox:** the payload contains only the fields the email needs, the request is signed, 2xx marks it sent, and the full
   backoff schedule ends in `failed` with an activity entry. Network errors and missing configuration count as
   failed attempts.
 - **Seed, dates (UTC, month and DST boundaries) and the UI helpers** that decide what the screens show.

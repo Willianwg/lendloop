@@ -16,7 +16,7 @@ const loanIn = (status: LoanStatus, startDate = "2026-11-10", endDate = "2026-11
   endDate,
 });
 
-// The spec §6 diagram written out independently of the implementation:
+// The state diagram written out independently of the implementation:
 // action -> [allowed from-statuses, actor, to-status, event, who is notified].
 const SPEC: Record<LoanAction, [LoanStatus[], "lender" | "borrower", LoanStatus, string, "lender" | "borrower"]> = {
   approve: [["pending"], "lender", "approved", "loan.approved", "borrower"],

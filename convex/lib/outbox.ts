@@ -1,4 +1,4 @@
-// Transactional outbox for Convex -> n8n loan events (spec §8.1).
+// Transactional outbox for Convex -> n8n loan events.
 //
 // The mutation that changes a loan calls `enqueueLoanEvent` in the same transaction: the
 // delivery row and the scheduled send commit together with the state change, or not at all.

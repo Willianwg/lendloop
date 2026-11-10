@@ -11,7 +11,7 @@ import { signRequest, SIGNATURE_HEADER } from "./lib/signature";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ERROR_LENGTH = 200;
 
-/** Spec §8.1: only what the email needs. No ids other than the loan's, no other user's email. */
+/** Only what the email needs. No ids other than the loan's, no other user's email. */
 export type LoanEventPayload = {
   eventId: string;
   type: EventType;
@@ -97,7 +97,7 @@ export const recordAttempt = internalMutation({
     const delivery = await ctx.db.get(deliveryId);
     if (!delivery || delivery.status !== "pending") return;
     const now = Date.now();
-    // Ids and outcome only: never emails, names or secrets (spec §10).
+    // Ids and outcome only: never emails, names or secrets.
     const log = (status: string, extra: Record<string, unknown> = {}) =>
       console.log(
         JSON.stringify({

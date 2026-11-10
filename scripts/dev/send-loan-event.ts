@@ -1,4 +1,4 @@
-// Sends one signed loan event (spec §8.1) to the n8n webhook, the way Convex's outbox does.
+// Sends one signed loan event to the n8n webhook, the way Convex's outbox does.
 // For testing the Notify workflow without the app.
 //
 //   npx tsx scripts/dev/send-loan-event.ts [--type loan.approved] [--name "João"] [--tool "<b>Drill</b> & Saw"]

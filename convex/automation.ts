@@ -1,4 +1,4 @@
-// Write-backs and reads for the n8n workflows (spec §8). The HTTP routes in http.ts verify the
+// Write-backs and reads for the n8n workflows. The HTTP routes in http.ts verify the
 // signature and the body shape, then call these internal functions, which hold the idempotency
 // rules. None of them is callable from the app.
 import { v } from "convex/values";

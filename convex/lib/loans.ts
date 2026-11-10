@@ -1,4 +1,4 @@
-// The loan state machine (spec §6). Every status change goes through `TRANSITIONS`; the
+// The loan state machine. Every status change goes through `TRANSITIONS`; the
 // mutations in loans.ts only add the side effects (overlap checks, timestamps, events).
 //
 //   pending ──approve──▶ approved ──claim_return──▶ return_claimed ──confirm_return──▶ returned

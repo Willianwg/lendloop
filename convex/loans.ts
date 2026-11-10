@@ -10,7 +10,7 @@ import { enqueueLoanEvent } from "./lib/outbox";
 
 /**
  * Asks to borrow a tool. Dates are UTC calendar dates; a start date of "yesterday (UTC)" is
- * accepted because for someone west of UTC it may still be today (Review Focus 1).
+ * accepted because for someone west of UTC it may still be today.
  */
 export const request = mutation({
   args: { toolId: v.id("tools"), startDate: v.string(), endDate: v.string() },
@@ -41,7 +41,7 @@ export const request = mutation({
       fail("CONFLICT", `You have ${MAX_OPEN_REQUESTS} open requests. Wait for an answer or cancel one first.`);
     }
 
-    // Mutations are serializable, so this check also stops a double tap (Review Focus 5).
+    // Mutations are serializable, so this check also stops a double tap.
     const myPending = await ctx.db
       .query("loans")
       .withIndex("by_tool_borrower_status", (q) =>
@@ -226,7 +226,7 @@ function contactVisible(loan: Doc<"loans">, now: number): boolean {
 
 /**
  * Loan detail for a party or an admin. The counterpart's email is shown only to a party and
- * only once the loan was approved (spec §5); an admin who is not a party never gets it.
+ * only once the loan was approved; an admin who is not a party never gets it.
  */
 export const get = query({
   args: { loanId: v.id("loans") },

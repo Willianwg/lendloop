@@ -39,7 +39,7 @@ describe("loans.request", () => {
     const request = (startDate: string, endDate: string) => as("joao").mutation(api.loans.request, { toolId: drill, startDate, endDate });
 
     expect((await errorOf(request("2026-11-07", "2026-11-08"))).code).toBe("INVALID"); // 2 days ago
-    // Yesterday in UTC is still "today" for someone west of UTC (Review Focus 1).
+    // Yesterday in UTC is still "today" for someone west of UTC.
     expect(await request("2026-11-08", "2026-11-08")).toBeTruthy();
     expect((await errorOf(request("2026-11-12", "2026-11-11"))).code).toBe("INVALID"); // end before start
     expect((await errorOf(request("2026-11-20", "2026-12-20"))).code).toBe("INVALID"); // 31 days
@@ -76,7 +76,7 @@ describe("loans.request", () => {
     const { t, drill, as } = await world();
     const request = (startDate: string, endDate: string) => as("joao").mutation(api.loans.request, { toolId: drill, startDate, endDate });
     await request("2026-11-10", "2026-11-12");
-    // Double tap (Review Focus 5), and a range that only touches the first one.
+    // Double tap, and a range that only touches the first one.
     expect((await errorOf(request("2026-11-10", "2026-11-12"))).code).toBe("CONFLICT");
     expect((await errorOf(request("2026-11-12", "2026-11-14"))).code).toBe("CONFLICT");
     // Non-overlapping dates, or another borrower, are fine.

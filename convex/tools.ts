@@ -194,7 +194,7 @@ export const remove = mutation({
 
 /**
  * Admin removal (moderation). Never blocked by an active loan: that loan keeps running to
- * completion (spec §7); the tool just disappears from listings and can't be requested.
+ * completion; the tool just disappears from listings and can't be requested.
  */
 export const adminRemove = mutation({
   args: { toolId: v.id("tools"), reason: v.string() },

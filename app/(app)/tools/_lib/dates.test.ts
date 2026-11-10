@@ -6,7 +6,7 @@ const day = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h)
 
 describe("toIsoDate / fromIsoDate", () => {
   it("formats the local calendar date, even late in the evening", () => {
-    // 22:00 local is already the next day in UTC for anyone west of UTC (Review Focus 1).
+    // 22:00 local is already the next day in UTC for anyone west of UTC.
     expect(toIsoDate(day(2026, 11, 9, 22))).toBe("2026-11-09");
     expect(toIsoDate(day(2026, 1, 5, 0))).toBe("2026-01-05");
   });

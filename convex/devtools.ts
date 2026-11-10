@@ -4,8 +4,8 @@
 // The smoke test needs a fresh loan event and a fresh overdue loan on every run (reminders are
 // once per loan per day, and the seed runs once). So each run creates a small fixture owned by
 // the seeded neighbors, sends its events through the real outbox, and deletes it afterwards.
-// The fixture's tools are created already "removed" (the state an admin removal leaves behind,
-// spec §7), so they never show up on the board, and the fixture never touches the demo data.
+// The fixture's tools are created already "removed" (the state an admin removal leaves behind),
+// so they never show up on the board, and the fixture never touches the demo data.
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";

@@ -33,7 +33,7 @@ const SEED_TOOLS: readonly ToolSpec[] = [
   {
     key: "drill",
     owner: "ana",
-    // The HTML is deliberate: it shows that user text reaches emails escaped (Review Focus 3).
+    // The HTML is deliberate: it shows that user text reaches emails escaped.
     name: "<b>Drill</b> & Saw",
     category: "power_tools",
     condition: "good",
@@ -272,7 +272,7 @@ async function seedBase(ctx: MutationCtx, now: number) {
     live: { type: "loan.requested", at: ago(0, 5) },
   });
   // approved and overdue (ended 3 days ago): João still has Ana's shears. The overdue workflow
-  // reminds him. Live: João gets "Approved" (accented name and tool, Review Focus 2).
+  // reminds him. Live: João gets "Approved" (accented name and tool).
   await loan("shears", "joao", {
     startDate: d(-10),
     endDate: d(-3),

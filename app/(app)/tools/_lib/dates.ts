@@ -1,6 +1,6 @@
 // Date helpers for the request sheet and tool cards. They work in the viewer's local calendar:
 // the person picks "today" as they see it, and the server tolerates the UTC offset
-// (it accepts a start date of yesterday in UTC, Review Focus 1).
+// (it accepts a start date of yesterday in UTC).
 import { addDays, differenceInCalendarDays, format, isValid, parse, startOfDay } from "date-fns";
 import type { Matcher } from "react-day-picker";
 import { MAX_LOAN_DAYS } from "@/convex/lib/constants";

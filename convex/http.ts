@@ -1,4 +1,4 @@
-// HTTP actions for n8n (spec §8). All routes are HMAC-signed with N8N_TO_CONVEX_SECRET; see
+// HTTP actions for n8n. All routes are HMAC-signed with N8N_TO_CONVEX_SECRET; see
 // lib/httpSigned.ts. Bodies are validated with zod here; the idempotency rules live in automation.ts.
 import { httpRouter } from "convex/server";
 import { z } from "zod";
